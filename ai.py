@@ -3,24 +3,31 @@ import json
 import google.generativeai as genai
 
 _model = None
+MODELS_TO_TRY = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash"]
 
 
-def _get_model():
-    global _model
-    if _model is None:
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        genai.configure(api_key=api_key)
-        _model = genai.GenerativeModel("gemini-2.0-flash")
-    return _model
+def _get_model(model_name: str):
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(model_name)
 
 
 def ask(prompt: str) -> str:
-    try:
-        model = _get_model()
-        response = model.generate_content(prompt)
-        return response.text.strip()
-    except Exception as e:
-        return f"⚠️ AI unavailable: {str(e)}"
+    if not os.environ.get("GEMINI_API_KEY"):
+        return "⚠️ No API key set. Add GEMINI_API_KEY to your terminal and restart the server."
+    last_error = ""
+    for model_name in MODELS_TO_TRY:
+        try:
+            model = _get_model(model_name)
+            response = model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            last_error = str(e)
+            if "404" in last_error or "not found" in last_error.lower():
+                continue  # try next model
+            if "429" in last_error:
+                continue  # try next model
+    return f"⚠️ AI unavailable right now — please check your Gemini API key quota at aistudio.google.com"
 
 
 def capacity_insight(projects: list[dict], time_entries: list[dict], calendar: list[dict]) -> str:
