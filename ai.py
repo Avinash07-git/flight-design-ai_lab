@@ -1,9 +1,12 @@
 import os
 import json
 import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _model = None
-MODELS_TO_TRY = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash"]
+MODELS_TO_TRY = ["models/gemini-2.5-flash", "models/gemini-2.0-flash-001", "models/gemini-2.0-flash"]
 
 
 def _get_model(model_name: str):
