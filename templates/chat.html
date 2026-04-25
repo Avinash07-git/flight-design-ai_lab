@@ -9,19 +9,20 @@
   <div class="bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4 mb-5 flex gap-3 items-start">
     <span class="text-xl">💬</span>
     <p class="text-sm text-slate-600 leading-relaxed">
-      Ask anything about your business — budgets, overdue payments, capacity, clients.
-      The AI reads <strong>your uploaded data</strong> and answers in plain English.
+      Ask anything about your studio — capacity, budgets, billing, team workload, clients.
+      The AI reads <strong>your real project and schedule data</strong> and answers in plain English.
     </p>
   </div>
 
   <!-- Suggested questions -->
   <div class="flex flex-wrap gap-2 mb-5" id="suggestions">
     {% set qs = [
-      "Which projects are over budget?",
-      "Who hasn't paid me yet?",
-      "Which contracts are still unsigned?",
-      "What's my total revenue this month?",
-      "Am I overbooked next week?",
+      "Which employees are over their contracted capacity?",
+      "What is our total billed revenue?",
+      "Which projects are over their hours budget?",
+      "Who is billing the most hours?",
+      "Which client has the most hours logged?",
+      "What does Ariana Wolf work on most?",
     ] %}
     {% for q in qs %}
     <button

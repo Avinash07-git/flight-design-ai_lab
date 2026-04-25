@@ -8,99 +8,93 @@
 </div>
 
 <!-- Stat Cards -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+  <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+    <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Total Billed Revenue</p>
+    <p class="text-3xl font-bold text-indigo-600">${{ "${:,.0f}".format(stats.total_revenue) }}</p>
+  </div>
+  <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+    <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Hours Logged</p>
+    <p class="text-3xl font-bold text-slate-800">{{ stats.total_hours_logged | int }}</p>
+  </div>
   <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
     <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Active Projects</p>
-    <p class="text-3xl font-bold text-slate-800">{{ stats.active_projects }}</p>
+    <p class="text-3xl font-bold text-slate-800">{{ stats.total_projects }}</p>
   </div>
   <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-    <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Overdue Invoices</p>
-    <p class="text-3xl font-bold text-red-500">${{ "${:,.0f}".format(stats.overdue_amount) }}</p>
+    <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Team Size</p>
+    <p class="text-3xl font-bold text-slate-800">{{ stats.total_employees }}</p>
   </div>
   <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-    <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Unsigned Contracts</p>
-    <p class="text-3xl font-bold text-amber-500">{{ stats.unsigned_contracts }}</p>
+    <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Over-Budget Projects</p>
+    <p class="text-3xl font-bold text-orange-500">{{ stats.over_budget_projects }}</p>
   </div>
   <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
-    <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Over Budget</p>
-    <p class="text-3xl font-bold text-orange-500">{{ stats.overbudget_projects }}</p>
+    <p class="text-xs text-slate-400 uppercase tracking-wide mb-2">Over-Capacity Staff</p>
+    <p class="text-3xl font-bold text-red-500">{{ stats.employees_over_capacity }}</p>
+  </div>
+</div>
+
+<!-- Team Capacity Summary -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-100">
+    <h3 class="font-semibold text-slate-700 text-sm">Team Capacity At-A-Glance</h3>
+  </div>
+  <div class="divide-y divide-slate-50">
+    {% for e in capacity_data %}
+    {% set pct = [e.utilization_pct, 200] | min %}
+    <div class="px-6 py-3">
+      <div class="flex justify-between items-center mb-1.5">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium text-slate-700">{{ e.name }}</span>
+          <span class="text-xs px-1.5 py-0.5 rounded
+            {% if e.employee_type == 'Core Staff' %}bg-indigo-50 text-indigo-600
+            {% else %}bg-slate-100 text-slate-500{% endif %}">
+            {{ e.employee_type }}
+          </span>
+        </div>
+        <span class="text-xs {% if e.over_capacity %}text-red-500 font-semibold{% else %}text-slate-400{% endif %}">
+          {{ e.avg_weekly_hours }}h avg / {{ e.allowed_hours_week }}h allowed
+          {% if e.over_capacity %}⚠️{% endif %}
+        </span>
+      </div>
+      <div class="w-full bg-slate-100 rounded-full h-1.5">
+        <div class="h-1.5 rounded-full {% if e.over_capacity %}bg-red-400{% elif e.utilization_pct > 80 %}bg-amber-400{% else %}bg-indigo-400{% endif %}"
+             style="width: {{ [pct, 100] | min }}%"></div>
+      </div>
+    </div>
+    {% endfor %}
   </div>
 </div>
 
 <!-- Projects Table -->
 <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
   <div class="px-6 py-4 border-b border-slate-100">
-    <h3 class="font-semibold text-slate-700 text-sm">All Projects</h3>
+    <h3 class="font-semibold text-slate-700 text-sm">Top Projects by Hours Logged</h3>
   </div>
   <table class="w-full text-sm">
     <thead class="bg-slate-50 text-slate-400 text-xs uppercase tracking-wide">
       <tr>
         <th class="text-left px-6 py-3">Project</th>
         <th class="text-left px-6 py-3">Client</th>
-        <th class="text-left px-6 py-3">Status</th>
-        <th class="text-right px-6 py-3">Budget</th>
-        <th class="text-right px-6 py-3">Hours</th>
-        <th class="text-left px-6 py-3">Deadline</th>
+        <th class="text-left px-6 py-3">Service</th>
+        <th class="text-right px-6 py-3">Hrs Budget</th>
+        <th class="text-right px-6 py-3">Hrs Logged</th>
+        <th class="text-right px-6 py-3">Billed</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-50">
       {% for p in projects %}
-      {% set over = p.logged_hours > p.estimated_hours %}
+      {% set over = p.actual_hours > p.hours_budget and p.hours_budget > 0 %}
       <tr class="hover:bg-slate-50 transition-colors">
-        <td class="px-6 py-4 font-medium text-slate-800">{{ p.name }}</td>
-        <td class="px-6 py-4 text-slate-500">{{ p.client }}</td>
-        <td class="px-6 py-4">
-          {% if p.status == "Completed" %}
-            <span class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-medium">Completed</span>
-          {% elif p.status == "In Progress" %}
-            <span class="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-medium">In Progress</span>
-          {% else %}
-            <span class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-full font-medium">Not Started</span>
-          {% endif %}
+        <td class="px-6 py-3 font-medium text-slate-800 text-xs">{{ p.name }}</td>
+        <td class="px-6 py-3 text-slate-500 text-xs">{{ p.client }}</td>
+        <td class="px-6 py-3 text-slate-400 text-xs">{{ p.service }}</td>
+        <td class="px-6 py-3 text-right text-slate-500 text-xs">{{ p.hours_budget | int }}h</td>
+        <td class="px-6 py-3 text-right text-xs {% if over %}text-red-500 font-semibold{% else %}text-slate-600{% endif %}">
+          {{ p.actual_hours | int }}h {% if over %}⚠️{% endif %}
         </td>
-        <td class="px-6 py-4 text-right text-slate-600">${{ "${:,.0f}".format(p.budget_usd) }}</td>
-        <td class="px-6 py-4 text-right {% if over %}text-red-500 font-semibold{% else %}text-slate-600{% endif %}">
-          {{ p.logged_hours|int }} / {{ p.estimated_hours|int }}h
-          {% if over %}<span class="text-xs">⚠️</span>{% endif %}
-        </td>
-        <td class="px-6 py-4 text-slate-500">{{ p.deadline }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-
-<!-- Invoices -->
-<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-  <div class="px-6 py-4 border-b border-slate-100">
-    <h3 class="font-semibold text-slate-700 text-sm">Invoices</h3>
-  </div>
-  <table class="w-full text-sm">
-    <thead class="bg-slate-50 text-slate-400 text-xs uppercase tracking-wide">
-      <tr>
-        <th class="text-left px-6 py-3">Invoice</th>
-        <th class="text-left px-6 py-3">Client</th>
-        <th class="text-right px-6 py-3">Amount</th>
-        <th class="text-left px-6 py-3">Status</th>
-        <th class="text-left px-6 py-3">Due</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-slate-50">
-      {% for inv in invoices %}
-      <tr class="hover:bg-slate-50 transition-colors">
-        <td class="px-6 py-4 font-mono text-slate-600 text-xs">{{ inv.invoice_number }}</td>
-        <td class="px-6 py-4 text-slate-800">{{ inv.client }}</td>
-        <td class="px-6 py-4 text-right font-semibold text-slate-800">${{ "${:,.0f}".format(inv.amount_usd) }}</td>
-        <td class="px-6 py-4">
-          {% if inv.status == "Paid" %}
-            <span class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-medium">Paid</span>
-          {% elif inv.status == "Overdue" %}
-            <span class="bg-red-100 text-red-600 text-xs px-2 py-1 rounded-full font-medium">Overdue</span>
-          {% else %}
-            <span class="bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-full font-medium">Pending</span>
-          {% endif %}
-        </td>
-        <td class="px-6 py-4 text-slate-500">{{ inv.due_date }}</td>
+        <td class="px-6 py-3 text-right font-semibold text-slate-800 text-xs">${{ "${:,.0f}".format(p.billed_amount) }}</td>
       </tr>
       {% endfor %}
     </tbody>

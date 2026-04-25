@@ -5,8 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_model = None
-MODELS_TO_TRY = ["models/gemini-2.5-flash", "models/gemini-2.0-flash-001", "models/gemini-2.0-flash"]
+MODELS_TO_TRY = [
+    "models/gemini-2.5-flash",
+    "models/gemini-2.0-flash-001",
+    "models/gemini-2.0-flash",
+]
 
 
 def _get_model(model_name: str):
@@ -17,7 +20,7 @@ def _get_model(model_name: str):
 
 def ask(prompt: str) -> str:
     if not os.environ.get("GEMINI_API_KEY"):
-        return "⚠️ No API key set. Add GEMINI_API_KEY to your terminal and restart the server."
+        return "⚠️ No API key set. Add GEMINI_API_KEY to your .env file and restart."
     last_error = ""
     for model_name in MODELS_TO_TRY:
         try:
@@ -27,125 +30,145 @@ def ask(prompt: str) -> str:
         except Exception as e:
             last_error = str(e)
             if "404" in last_error or "not found" in last_error.lower():
-                continue  # try next model
+                continue
             if "429" in last_error:
-                continue  # try next model
-    return f"⚠️ AI unavailable right now — please check your Gemini API key quota at aistudio.google.com"
+                continue
+    return "⚠️ AI unavailable right now — please check your Gemini API key quota."
 
 
-def capacity_insight(projects: list[dict], time_entries: list[dict], calendar: list[dict]) -> str:
-    context = f"""
-You are a business analyst for a freelance brand design studio called Flight Design, owned by Ariana Wolf in Oakland, CA.
+# ── Dashboard ─────────────────────────────────────────────────────────────────
 
-ACTIVE PROJECTS:
-{json.dumps([p for p in projects if p['status'] != 'Completed'], indent=2)}
-
-TIME ENTRIES THIS WEEK:
-{json.dumps(time_entries, indent=2)}
-
-UPCOMING CALENDAR EVENTS:
-{json.dumps(calendar, indent=2)}
-
-Analyse Ariana's current capacity situation. Be specific about:
-1. Which projects are over budget in hours and by how much
-2. Whether she is at risk of being overbooked next week based on calendar events and active projects
-3. One concrete recommendation she should act on today
-
-Keep it to 3–4 sentences. Be direct, warm, and practical. No bullet points — write as a paragraph.
-"""
-    return ask(context)
-
-
-def dashboard_alert(stats: dict, projects: list[dict], invoices: list[dict], contracts: list[dict]) -> str:
-    context = f"""
-You are a smart business assistant for Flight Design, a freelance design studio owned by Ariana Wolf.
+def dashboard_alert(stats: dict, capacity_data: list[dict], projects: list[dict]) -> str:
+    over_cap = [e for e in capacity_data if e["over_capacity"]]
+    over_budget = [p for p in projects if p["actual_hours"] > p["hours_budget"] and p["hours_budget"] > 0]
+    prompt = f"""
+You are a smart business assistant for Flight Design, a brand and graphic design studio owned by Ariana Wolf in Oakland, CA.
 
 BUSINESS SNAPSHOT:
 {json.dumps(stats, indent=2)}
 
-PROJECTS:
-{json.dumps(projects, indent=2)}
+EMPLOYEES OVER THEIR CONTRACTED CAPACITY (name, allowed hrs/week, avg actual hrs/week):
+{json.dumps([{"name": e["name"], "allowed": e["allowed_hours_week"], "avg_actual": e["avg_weekly_hours"]} for e in over_cap], indent=2)}
 
-INVOICES:
-{json.dumps(invoices, indent=2)}
+OVER-BUDGET PROJECTS (name, client, budgeted hours, actual hours):
+{json.dumps([{"project": p["name"], "client": p["client"], "budget_hrs": p["hours_budget"], "actual_hrs": p["actual_hours"]} for p in over_budget], indent=2)}
 
-CONTRACTS:
-{json.dumps(contracts, indent=2)}
-
-Write a short 2-sentence morning alert for Ariana. Highlight the single most urgent thing she needs to do today and one positive thing happening in her business. Be warm and specific. No bullet points.
+Write a 2-sentence morning alert for Ariana. Name the single most urgent staffing or budget issue she should address today. Be warm, direct, and specific with real names and numbers. No bullet points.
 """
-    return ask(context)
+    return ask(prompt)
 
 
-def chat_response(question: str, projects: list[dict], time_entries: list[dict],
-                  invoices: list[dict], contracts: list[dict], calendar: list[dict]) -> str:
-    context = f"""
-You are a smart business assistant for Flight Design, a freelance design studio owned by Ariana Wolf in Oakland, CA.
-Answer the question using ONLY the data provided below. Be concise, specific, and helpful.
-If the data doesn't contain enough information, say so honestly.
+# ── Capacity ──────────────────────────────────────────────────────────────────
 
-PROJECTS: {json.dumps(projects, indent=2)}
-TIME ENTRIES: {json.dumps(time_entries, indent=2)}
-INVOICES: {json.dumps(invoices, indent=2)}
-CONTRACTS: {json.dumps(contracts, indent=2)}
-CALENDAR: {json.dumps(calendar, indent=2)}
+def capacity_insight(capacity_data: list[dict]) -> str:
+    prompt = f"""
+You are a business analyst for Flight Design, a brand design studio run by Ariana Wolf in Oakland, CA.
 
-ARIANA'S QUESTION: {question}
+EMPLOYEE CAPACITY ANALYSIS (contracted vs actual average weekly hours):
+{json.dumps(capacity_data, indent=2)}
 
-Answer in plain English. Use specific names and numbers from the data. Keep it under 100 words.
+Write 3–4 sentences analysing the team's capacity situation. Be specific:
+1. Which employees are the most overextended and by how much
+2. Whether subcontractors vs core staff show different patterns
+3. One concrete action Ariana should take immediately
+
+Be direct and practical. No bullet points — write as a paragraph.
 """
-    return ask(context)
+    return ask(prompt)
 
 
-def draft_invoice(project: dict, entries: list[dict]) -> str:
-    context = f"""
-You are helping Ariana Wolf of Flight Design draft an invoice description for QuickBooks.
+# ── Chat ──────────────────────────────────────────────────────────────────────
 
-PROJECT: {json.dumps(project, indent=2)}
-TIME ENTRIES: {json.dumps(entries, indent=2)}
+def chat_response(question: str, employees: list[dict], projects: list[dict],
+                  schedule: list[dict]) -> str:
+    # Summarise schedule to avoid token bloat — group by employee + project
+    from collections import defaultdict
+    summary: dict = defaultdict(lambda: {"hours": 0.0, "amount": 0.0})
+    for row in schedule:
+        key = f"{row['employee_name']} → {row['project']}"
+        summary[key]["hours"] += row.get("hours", 0)
+        summary[key]["amount"] += row.get("amount", 0)
 
-Write a professional invoice description that summarises:
-- What work was done (based on time entry descriptions)
-- Total hours logged
-- Rate per hour and total amount
+    prompt = f"""
+You are a smart business assistant for Flight Design, a brand design studio owned by Ariana Wolf in Oakland, CA.
+Answer the question using ONLY the data provided. Be concise, specific, and helpful.
+If the data doesn't contain enough information to answer, say so honestly.
 
-Format it as 2-3 sentences ready to paste into QuickBooks. Do not add a subject line or greeting.
+EMPLOYEES (name, type, bill rate, capacity %):
+{json.dumps([{"name": e["name"], "type": e["employee_type"], "rate": e["bill_rate"], "capacity_pct": e["capacity_pct"]} for e in employees], indent=2)}
+
+PROJECTS (name, client, service, hours budget, budget USD):
+{json.dumps([{"name": p["name"], "client": p["client"], "service": p["service"], "hours_budget": p["hours_budget"], "budget_usd": p["budget_usd"]} for p in projects], indent=2)}
+
+SCHEDULE SUMMARY (employee → project: total hours, total billed):
+{json.dumps([{"assignment": k, "hours": round(v["hours"],1), "billed": v["amount"]} for k, v in summary.items()], indent=2)}
+
+QUESTION: {question}
+
+Answer in plain English. Use specific names and numbers. Keep it under 120 words.
 """
-    return ask(context)
+    return ask(prompt)
 
 
-def draft_contract_followup(contract: dict) -> str:
-    context = f"""
-You are helping Ariana Wolf of Flight Design write a short follow-up email to a client who hasn't signed their contract yet.
+# ── Smart Actions ─────────────────────────────────────────────────────────────
 
-CONTRACT DETAILS: {json.dumps(contract, indent=2)}
-
-Write a warm, professional, 3-sentence follow-up email. Include:
-- A friendly reminder that the contract was sent
-- An offer to answer any questions
-- A soft call to action to sign when ready
-
-Use first person as Ariana. Do not add a subject line — just the body. Sign off as "Ariana".
-"""
-    return ask(context)
-
-
-def weekly_briefing(projects: list[dict], invoices: list[dict],
-                    contracts: list[dict], calendar: list[dict]) -> str:
-    context = f"""
+def weekly_briefing(stats: dict, capacity_data: list[dict], projects: list[dict]) -> str:
+    over_cap = [e for e in capacity_data if e["over_capacity"]]
+    over_budget = [p for p in projects if p["actual_hours"] > p["hours_budget"] and p["hours_budget"] > 0]
+    prompt = f"""
 You are a smart business assistant generating a weekly briefing for Ariana Wolf of Flight Design.
 
-PROJECTS: {json.dumps(projects, indent=2)}
-INVOICES: {json.dumps(invoices, indent=2)}
-CONTRACTS: {json.dumps(contracts, indent=2)}
-UPCOMING CALENDAR: {json.dumps(calendar, indent=2)}
+BUSINESS STATS: {json.dumps(stats, indent=2)}
+OVER-CAPACITY EMPLOYEES: {json.dumps(over_cap, indent=2)}
+OVER-BUDGET PROJECTS: {json.dumps(over_budget, indent=2)}
+ALL PROJECTS SUMMARY: {json.dumps(projects[:20], indent=2)}
 
-Generate a weekly briefing with these sections:
-1. **Top 3 Priorities** this week (specific, actionable)
-2. **Money** — what's overdue, what's coming in
-3. **Watch Out** — any capacity or deadline risk
-4. **Quick Win** — one thing she can knock out fast today
+Generate a weekly briefing with these bold sections:
+1. **Top 3 Priorities** — specific and actionable for this week
+2. **Capacity Alerts** — which team members are overextended and by how much
+3. **Budget Watch** — which projects are over hours budget
+4. **Revenue Snapshot** — total billed, avg per project, quick win to improve cash flow
 
 Use bold headers. Be specific with names and numbers. Keep each section to 1–2 sentences.
 """
-    return ask(context)
+    return ask(prompt)
+
+
+def capacity_violation_report(capacity_data: list[dict]) -> str:
+    over_cap = [e for e in capacity_data if e["over_capacity"]]
+    prompt = f"""
+You are a business operations analyst for Flight Design, a brand design studio owned by Ariana Wolf.
+
+EMPLOYEES EXCEEDING CONTRACTED CAPACITY:
+{json.dumps(over_cap, indent=2)}
+
+Write a concise capacity violation report that:
+1. Names each overextended employee with their contracted hours/week vs actual average
+2. Flags the top 2–3 most severe cases
+3. Recommends whether Ariana should renegotiate contracts, hire more staff, or reduce project load
+
+Format as a professional memo. Use bold for employee names. Keep it under 150 words.
+"""
+    return ask(prompt)
+
+
+def project_budget_report(projects: list[dict]) -> str:
+    over_budget = [p for p in projects if p["actual_hours"] > p["hours_budget"] and p["hours_budget"] > 0]
+    on_track = [p for p in projects if 0 < p["actual_hours"] <= p["hours_budget"]]
+    prompt = f"""
+You are a project manager analyst for Flight Design, a brand design studio owned by Ariana Wolf in Oakland, CA.
+
+OVER-BUDGET PROJECTS (hours logged exceed budgeted hours):
+{json.dumps(over_budget, indent=2)}
+
+ON-TRACK PROJECTS (sample):
+{json.dumps(on_track[:10], indent=2)}
+
+Write a concise project budget status report:
+1. List each over-budget project with client name, hours over budget, and estimated cost impact at $175/hr avg
+2. Highlight which client relationship is most at risk
+3. Give one immediate recommendation
+
+Format professionally with bold project names. Under 150 words.
+"""
+    return ask(prompt)

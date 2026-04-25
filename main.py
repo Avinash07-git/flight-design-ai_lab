@@ -1,11 +1,10 @@
 import csv
 import io
 import os
-from fastapi import FastAPI, Request, UploadFile, File, Form
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 
 import database as db
 import ai
@@ -19,7 +18,7 @@ if os.path.exists("static"):
 db.init_db()
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
 
 def _parse_upload(content: bytes) -> list[dict]:
     text = content.decode("utf-8", errors="replace")
@@ -28,7 +27,6 @@ def _parse_upload(content: bytes) -> list[dict]:
 
 
 def _require_data(request: Request):
-    """Redirect to upload page if no data loaded yet."""
     if not db.is_data_loaded():
         return RedirectResponse("/", status_code=302)
     return None
@@ -49,24 +47,20 @@ async def load_demo():
 
 @app.post("/upload")
 async def upload_csvs(
+    employees: UploadFile = File(None),
     projects: UploadFile = File(None),
-    time_entries: UploadFile = File(None),
-    invoices: UploadFile = File(None),
-    contracts: UploadFile = File(None),
-    calendar: UploadFile = File(None),
+    schedule: UploadFile = File(None),
 ):
-    files = {}
+    files: dict[str, list[dict]] = {}
     mapping = {
+        "employees": employees,
         "projects": projects,
-        "time_entries": time_entries,
-        "invoices": invoices,
-        "contracts": contracts,
-        "calendar_events": calendar,
+        "schedule": schedule,
     }
-    for table, upload in mapping.items():
+    for key, upload in mapping.items():
         if upload and upload.filename:
             content = await upload.read()
-            files[table] = _parse_upload(content)
+            files[key] = _parse_upload(content)
 
     if not files:
         db.seed_mock_data()
@@ -78,10 +72,9 @@ async def upload_csvs(
 
 @app.get("/reset")
 async def reset():
-    import sqlite3
     conn = db.get_conn()
     conn.execute("UPDATE session SET loaded=0 WHERE id=1")
-    for t in ["projects","time_entries","invoices","contracts","calendar_events"]:
+    for t in ["employees", "projects", "schedule"]:
         conn.execute(f"DELETE FROM {t}")
     conn.commit()
     conn.close()
@@ -101,16 +94,15 @@ async def dashboard(request: Request):
 @app.get("/api/dashboard-data", response_class=HTMLResponse)
 async def dashboard_data(request: Request):
     stats = db.get_dashboard_stats()
-    projects = db.fetch_all("projects")
-    invoices = db.fetch_all("invoices")
-    contracts = db.fetch_all("contracts")
-    alert = ai.dashboard_alert(stats, projects, invoices, contracts)
+    capacity_data = db.get_capacity_data()
+    projects = db.get_projects_summary()
+    alert = ai.dashboard_alert(stats, capacity_data, projects)
     return templates.TemplateResponse("partials/dashboard_data.html", {
         "request": request,
         "stats": stats,
         "alert": alert,
-        "projects": projects,
-        "invoices": invoices,
+        "projects": projects[:15],       # top 15 by hours logged
+        "capacity_data": capacity_data,
     })
 
 
@@ -126,16 +118,12 @@ async def capacity_page(request: Request):
 
 @app.get("/api/capacity-data", response_class=HTMLResponse)
 async def capacity_data(request: Request):
-    projects = db.fetch_all("projects")
-    time_entries = db.fetch_all("time_entries")
-    calendar = db.fetch_all("calendar_events")
-    insight = ai.capacity_insight(projects, time_entries, calendar)
-    active = [p for p in projects if p["status"] != "Completed"]
+    capacity_data = db.get_capacity_data()
+    insight = ai.capacity_insight(capacity_data)
     return templates.TemplateResponse("partials/capacity_data.html", {
         "request": request,
-        "projects": active,
+        "capacity_data": capacity_data,
         "insight": insight,
-        "calendar": calendar,
     })
 
 
@@ -149,22 +137,16 @@ async def chat_page(request: Request):
     return templates.TemplateResponse("chat.html", {"request": request})
 
 
-class ChatRequest(BaseModel):
-    question: str
-
-
 @app.post("/api/chat", response_class=HTMLResponse)
 async def chat(request: Request):
     form = await request.form()
     question = form.get("question", "").strip()
     if not question:
         return HTMLResponse("<p class='text-gray-400 italic'>Please type a question.</p>")
-    projects = db.fetch_all("projects")
-    time_entries = db.fetch_all("time_entries")
-    invoices = db.fetch_all("invoices")
-    contracts = db.fetch_all("contracts")
-    calendar = db.fetch_all("calendar_events")
-    answer = ai.chat_response(question, projects, time_entries, invoices, contracts, calendar)
+    employees = db.fetch_all("employees")
+    projects = db.get_projects_summary()
+    schedule = db.fetch_all("schedule")
+    answer = ai.chat_response(question, employees, projects, schedule)
     return templates.TemplateResponse("partials/chat_bubble.html", {
         "request": request,
         "question": question,
@@ -179,60 +161,39 @@ async def actions_page(request: Request):
     redirect = _require_data(request)
     if redirect:
         return redirect
-    projects = db.fetch_all("projects")
-    contracts = db.fetch_all("contracts")
-    pending_contracts = [c for c in contracts if c["status"] == "Pending"]
-    active_projects = [p for p in projects if p["status"] != "Completed"]
-    return templates.TemplateResponse("actions.html", {
-        "request": request,
-        "active_projects": active_projects,
-        "pending_contracts": pending_contracts,
-    })
-
-
-@app.post("/api/action/invoice", response_class=HTMLResponse)
-async def action_invoice(request: Request):
-    form = await request.form()
-    project_id = int(form.get("project_id", 0))
-    projects = db.fetch_all("projects")
-    time_entries = db.fetch_all("time_entries")
-    project = next((p for p in projects if p["id"] == project_id), None)
-    if not project:
-        return HTMLResponse("<p class='text-red-500'>Project not found.</p>")
-    entries = [e for e in time_entries if int(e["project_id"]) == project_id]
-    draft = ai.draft_invoice(project, entries)
-    return templates.TemplateResponse("partials/action_result.html", {
-        "request": request,
-        "label": f"Invoice Draft — {project['name']}",
-        "draft": draft,
-    })
-
-
-@app.post("/api/action/followup", response_class=HTMLResponse)
-async def action_followup(request: Request):
-    form = await request.form()
-    contract_id = int(form.get("contract_id", 0))
-    contracts = db.fetch_all("contracts")
-    contract = next((c for c in contracts if c["id"] == contract_id), None)
-    if not contract:
-        return HTMLResponse("<p class='text-red-500'>Contract not found.</p>")
-    draft = ai.draft_contract_followup(contract)
-    return templates.TemplateResponse("partials/action_result.html", {
-        "request": request,
-        "label": f"Follow-up Email — {contract['client']}",
-        "draft": draft,
-    })
+    return templates.TemplateResponse("actions.html", {"request": request})
 
 
 @app.post("/api/action/briefing", response_class=HTMLResponse)
 async def action_briefing(request: Request):
-    projects = db.fetch_all("projects")
-    invoices = db.fetch_all("invoices")
-    contracts = db.fetch_all("contracts")
-    calendar = db.fetch_all("calendar_events")
-    draft = ai.weekly_briefing(projects, invoices, contracts, calendar)
+    stats = db.get_dashboard_stats()
+    capacity_data = db.get_capacity_data()
+    projects = db.get_projects_summary()
+    draft = ai.weekly_briefing(stats, capacity_data, projects)
     return templates.TemplateResponse("partials/action_result.html", {
         "request": request,
         "label": "Weekly Briefing",
+        "draft": draft,
+    })
+
+
+@app.post("/api/action/capacity-report", response_class=HTMLResponse)
+async def action_capacity_report(request: Request):
+    capacity_data = db.get_capacity_data()
+    draft = ai.capacity_violation_report(capacity_data)
+    return templates.TemplateResponse("partials/action_result.html", {
+        "request": request,
+        "label": "Capacity Violation Report",
+        "draft": draft,
+    })
+
+
+@app.post("/api/action/budget-report", response_class=HTMLResponse)
+async def action_budget_report(request: Request):
+    projects = db.get_projects_summary()
+    draft = ai.project_budget_report(projects)
+    return templates.TemplateResponse("partials/action_result.html", {
+        "request": request,
+        "label": "Project Budget Status Report",
         "draft": draft,
     })

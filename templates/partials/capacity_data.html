@@ -7,85 +7,115 @@
   </div>
 </div>
 
-<!-- Chart -->
+<!-- Chart: Allowed vs Avg Weekly Hours -->
 <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-  <h3 class="font-semibold text-slate-700 text-sm mb-5">Hours — Estimated vs Logged per Project</h3>
-  <div style="height: 280px; position: relative;">
+  <h3 class="font-semibold text-slate-700 text-sm mb-5">
+    Weekly Capacity: Contracted vs Average Actual Hours
+  </h3>
+  <div style="height: 300px; position: relative;">
     <canvas id="capacityChart"></canvas>
   </div>
 </div>
 
-<!-- Project Breakdown -->
-<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-  <div class="px-6 py-4 border-b border-slate-100">
-    <h3 class="font-semibold text-slate-700 text-sm">Active Project Breakdown</h3>
-  </div>
-  <div class="divide-y divide-slate-50">
-    {% for p in projects %}
-    {% set pct = ((p.logged_hours / p.estimated_hours) * 100) | int if p.estimated_hours > 0 else 0 %}
-    {% set over = p.logged_hours > p.estimated_hours %}
-    <div class="px-6 py-4">
-      <div class="flex justify-between items-center mb-2">
-        <span class="text-sm font-medium text-slate-700">{{ p.name }}</span>
-        <span class="text-xs {% if over %}text-red-500 font-semibold{% else %}text-slate-400{% endif %}">
-          {{ p.logged_hours|int }}h / {{ p.estimated_hours|int }}h
-          {% if over %}⚠️ Over{% endif %}
+<!-- Employee Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+  {% for e in capacity_data %}
+  {% set pct_capped = [e.utilization_pct, 100] | min %}
+  <div class="bg-white rounded-xl shadow-sm border {% if e.over_capacity %}border-red-200{% else %}border-slate-100{% endif %} p-5">
+    <div class="flex items-start justify-between mb-3">
+      <div>
+        <p class="font-semibold text-slate-800 text-sm">{{ e.name }}</p>
+        <p class="text-xs text-slate-400 mt-0.5">{{ e.employee_type }} · ${{ e.bill_rate | int }}/hr</p>
+      </div>
+      <div class="text-right">
+        <span class="text-xs px-2 py-1 rounded-full font-medium
+          {% if e.over_capacity %}bg-red-100 text-red-600{% else %}bg-green-100 text-green-700{% endif %}">
+          {% if e.over_capacity %}⚠️ Over Capacity{% else %}✅ Within Capacity{% endif %}
         </span>
       </div>
-      <div class="w-full bg-slate-100 rounded-full h-2">
-        <div class="h-2 rounded-full {% if over %}bg-red-400{% elif pct > 80 %}bg-amber-400{% else %}bg-indigo-400{% endif %}"
-             style="width: {{ [pct, 100] | min }}%"></div>
-      </div>
     </div>
-    {% endfor %}
-  </div>
-</div>
 
-<!-- Upcoming Calendar -->
-<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-  <div class="px-6 py-4 border-b border-slate-100">
-    <h3 class="font-semibold text-slate-700 text-sm">Upcoming Calendar</h3>
-  </div>
-  <div class="divide-y divide-slate-50">
-    {% for ev in calendar %}
-    <div class="px-6 py-3 flex items-center justify-between">
-      <div>
-        <p class="text-sm font-medium text-slate-700">{{ ev.title }}</p>
-        <p class="text-xs text-slate-400">{{ ev.date }} at {{ ev.start_time }}</p>
+    <!-- Key metrics row -->
+    <div class="grid grid-cols-3 gap-3 mb-3 text-center">
+      <div class="bg-slate-50 rounded-lg py-2">
+        <p class="text-xs text-slate-400 mb-0.5">Contracted</p>
+        <p class="text-sm font-bold text-slate-700">{{ e.capacity_pct }}%</p>
+        <p class="text-xs text-slate-500">{{ e.allowed_hours_week }}h/wk</p>
       </div>
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-slate-400">{{ ev.duration_hours }}h</span>
-        <span class="text-xs px-2 py-1 rounded-full
-          {% if ev.type == 'Client Call' %}bg-blue-100 text-blue-600
-          {% elif ev.type == 'Workshop' %}bg-purple-100 text-purple-600
-          {% else %}bg-slate-100 text-slate-500{% endif %}
-          font-medium">{{ ev.type }}</span>
+      <div class="bg-slate-50 rounded-lg py-2">
+        <p class="text-xs text-slate-400 mb-0.5">Avg Actual</p>
+        <p class="text-sm font-bold {% if e.over_capacity %}text-red-500{% else %}text-slate-700{% endif %}">
+          {{ e.avg_weekly_hours }}h/wk
+        </p>
+        <p class="text-xs text-slate-500">{{ e.total_hours | int }}h total</p>
+      </div>
+      <div class="bg-slate-50 rounded-lg py-2">
+        <p class="text-xs text-slate-400 mb-0.5">Overages</p>
+        <p class="text-sm font-bold {% if e.violation_weeks > 0 %}text-orange-500{% else %}text-slate-700{% endif %}">
+          {{ e.violation_weeks }} wks
+        </p>
+        <p class="text-xs text-slate-500">of {{ e.total_weeks }}</p>
       </div>
     </div>
-    {% endfor %}
+
+    <!-- Utilisation bar -->
+    <div>
+      <div class="flex justify-between text-xs text-slate-400 mb-1">
+        <span>Utilisation</span>
+        <span>{{ e.utilization_pct }}%</span>
+      </div>
+      <div class="w-full bg-slate-100 rounded-full h-2">
+        <div class="h-2 rounded-full
+          {% if e.over_capacity %}bg-red-400
+          {% elif e.utilization_pct > 80 %}bg-amber-400
+          {% else %}bg-indigo-400{% endif %}"
+             style="width: {{ pct_capped }}%"></div>
+      </div>
+    </div>
   </div>
+  {% endfor %}
 </div>
 
 <script>
 (function() {
-  const labels = {{ projects | map(attribute='name') | list | tojson }};
-  const estimated = {{ projects | map(attribute='estimated_hours') | list | tojson }};
-  const logged = {{ projects | map(attribute='logged_hours') | list | tojson }};
+  const labels   = {{ capacity_data | map(attribute='name') | list | tojson }};
+  const allowed  = {{ capacity_data | map(attribute='allowed_hours_week') | list | tojson }};
+  const actual   = {{ capacity_data | map(attribute='avg_weekly_hours') | list | tojson }};
+
+  const barColors = actual.map((a, i) =>
+    a > allowed[i] ? 'rgba(248,113,113,0.85)' : 'rgba(99,102,241,0.85)'
+  );
 
   new Chart(document.getElementById('capacityChart'), {
     type: 'bar',
     data: {
       labels,
       datasets: [
-        { label: 'Estimated Hours', data: estimated, backgroundColor: '#e0e7ff', borderRadius: 4 },
-        { label: 'Logged Hours', data: logged, backgroundColor: '#6366f1', borderRadius: 4 },
+        {
+          label: 'Contracted Hours / Week',
+          data: allowed,
+          backgroundColor: 'rgba(226,232,240,0.9)',
+          borderRadius: 4,
+        },
+        {
+          label: 'Avg Actual Hours / Week',
+          data: actual,
+          backgroundColor: barColors,
+          borderRadius: 4,
+        },
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: { legend: { position: 'top' } },
-      scales: { y: { beginAtZero: true, title: { display: true, text: 'Hours' } } }
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Hours / Week' },
+          max: 45,
+        }
+      }
     }
   });
 })();
