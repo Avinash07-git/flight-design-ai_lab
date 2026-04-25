@@ -208,7 +208,9 @@ def get_dashboard_stats() -> dict:
     total_hours = conn.execute(
         "SELECT COALESCE(SUM(hours),0) as t FROM schedule"
     ).fetchone()["t"]
-    total_projects = conn.execute("SELECT COUNT(*) as n FROM projects").fetchone()["n"]
+    total_projects = conn.execute(
+        "SELECT COUNT(DISTINCT project) as n FROM schedule WHERE hours > 0"
+    ).fetchone()["n"]
     total_employees = conn.execute("SELECT COUNT(*) as n FROM employees").fetchone()["n"]
     over_budget = conn.execute("""
         SELECT COUNT(*) as n FROM (
@@ -277,7 +279,7 @@ def get_capacity_data() -> list[dict]:
             "violation_weeks": violation_weeks,
             "total_weeks": num_weeks,
             "utilization_pct": utilization_pct,
-            "over_capacity": avg_weekly > allowed_h,
+            "over_capacity": violation_weeks > 0,   # any week over = flagged
         })
 
     return result
