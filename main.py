@@ -93,16 +93,37 @@ async def dashboard(request: Request):
 
 @app.get("/api/dashboard-data", response_class=HTMLResponse)
 async def dashboard_data(request: Request):
-    stats = db.get_dashboard_stats()
-    capacity_data = db.get_capacity_data()
-    projects = db.get_projects_summary()
-    alert = ai.dashboard_alert(stats, capacity_data, projects)
+    stats            = db.get_dashboard_stats()
+    capacity_data    = db.get_capacity_data()
+    projects         = db.get_projects_summary()
+    rev_by_emp       = db.get_revenue_by_employee()
+    rev_by_client    = db.get_revenue_by_client()
+    rev_by_service   = db.get_revenue_by_service()
+    weekly_trend     = db.get_weekly_revenue_trend()
+    health           = db.compute_studio_health(stats, capacity_data, rev_by_service, rev_by_client)
+
+    # Derived KPIs
+    blended_rate   = round(stats["total_revenue"] / stats["total_hours_logged"]) \
+                     if stats["total_hours_logged"] else 0
+    avg_utilization = round(
+        sum(e["utilization_pct"] for e in capacity_data) / len(capacity_data)
+    ) if capacity_data else 0
+    active_projects = [p for p in projects if p["actual_hours"] > 0]
+
+    alert = ai.dashboard_alert(stats, capacity_data, projects, rev_by_client, rev_by_service)
     return templates.TemplateResponse("partials/dashboard_data.html", {
-        "request": request,
-        "stats": stats,
-        "alert": alert,
-        "projects": projects[:15],       # top 15 by hours logged
-        "capacity_data": capacity_data,
+        "request":         request,
+        "stats":           stats,
+        "health":          health,
+        "alert":           alert,
+        "weekly_trend":    weekly_trend,
+        "rev_by_emp":      rev_by_emp,
+        "rev_by_client":   rev_by_client[:10],
+        "rev_by_service":  rev_by_service,
+        "capacity_data":   capacity_data,
+        "projects":        active_projects,
+        "blended_rate":    blended_rate,
+        "avg_utilization": avg_utilization,
     })
 
 
@@ -119,11 +140,13 @@ async def capacity_page(request: Request):
 @app.get("/api/capacity-data", response_class=HTMLResponse)
 async def capacity_data(request: Request):
     capacity_data = db.get_capacity_data()
-    insight = ai.capacity_insight(capacity_data)
+    cap_trend     = db.get_weekly_capacity_pct()
+    insight       = ai.capacity_insight(capacity_data)
     return templates.TemplateResponse("partials/capacity_data.html", {
-        "request": request,
+        "request":       request,
         "capacity_data": capacity_data,
-        "insight": insight,
+        "cap_trend":     cap_trend,
+        "insight":       insight,
     })
 
 

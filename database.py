@@ -285,6 +285,245 @@ def get_capacity_data() -> list[dict]:
     return result
 
 
+def get_revenue_by_employee() -> list[dict]:
+    """Revenue, hours, and % share per employee, sorted by revenue desc."""
+    conn = get_conn()
+    total_rev = conn.execute("SELECT COALESCE(SUM(amount),0) FROM schedule").fetchone()[0]
+    rows = conn.execute("""
+        SELECT employee_name AS name,
+               COALESCE(SUM(amount),0) AS revenue,
+               COALESCE(SUM(hours),0)  AS hours
+        FROM schedule
+        GROUP BY employee_name
+        ORDER BY revenue DESC
+    """).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        result.append({
+            "name":    r["name"],
+            "revenue": round(r["revenue"], 2),
+            "hours":   round(r["hours"], 1),
+            "pct":     round(r["revenue"] / total_rev * 100, 1) if total_rev else 0,
+        })
+    return result
+
+
+def get_revenue_by_client() -> list[dict]:
+    """Revenue per client with % share, sorted desc."""
+    conn = get_conn()
+    total_rev = conn.execute("SELECT COALESCE(SUM(amount),0) FROM schedule").fetchone()[0]
+    rows = conn.execute("""
+        SELECT client,
+               COALESCE(SUM(amount),0)            AS revenue,
+               COALESCE(SUM(hours),0)             AS hours,
+               COUNT(DISTINCT project)            AS projects,
+               COUNT(DISTINCT employee_name)      AS staff
+        FROM schedule
+        GROUP BY client
+        ORDER BY revenue DESC
+    """).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        result.append({
+            "client":   r["client"],
+            "revenue":  round(r["revenue"], 2),
+            "hours":    round(r["hours"], 1),
+            "projects": r["projects"],
+            "staff":    r["staff"],
+            "pct":      round(r["revenue"] / total_rev * 100, 1) if total_rev else 0,
+        })
+    return result
+
+
+def get_revenue_by_service() -> list[dict]:
+    """Revenue per service type with % share, sorted desc."""
+    conn = get_conn()
+    total_rev = conn.execute("SELECT COALESCE(SUM(amount),0) FROM schedule").fetchone()[0]
+    rows = conn.execute("""
+        SELECT service,
+               COALESCE(SUM(amount),0) AS revenue,
+               COALESCE(SUM(hours),0)  AS hours
+        FROM schedule
+        GROUP BY service
+        ORDER BY revenue DESC
+    """).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        result.append({
+            "service": r["service"],
+            "revenue": round(r["revenue"], 2),
+            "hours":   round(r["hours"], 1),
+            "pct":     round(r["revenue"] / total_rev * 100, 1) if total_rev else 0,
+        })
+    return result
+
+
+def get_weekly_revenue_trend() -> dict:
+    """Weekly billed totals for the trend line chart."""
+    conn = get_conn()
+    rows = conn.execute("SELECT start_date, amount FROM schedule").fetchall()
+    conn.close()
+
+    weekly: dict[str, float] = defaultdict(float)
+    week_anchor: dict[str, datetime] = {}          # earliest date per week
+
+    for row in rows:
+        wk = _week_key(row["start_date"])
+        if not wk:
+            continue
+        weekly[wk] += row["amount"]
+        try:
+            dt = datetime.strptime(row["start_date"], "%Y-%m-%d")
+            if wk not in week_anchor or dt < week_anchor[wk]:
+                week_anchor[wk] = dt
+        except ValueError:
+            pass
+
+    sorted_weeks = sorted(weekly.keys())
+    labels, values = [], []
+    for wk in sorted_weeks:
+        dt = week_anchor.get(wk)
+        labels.append(dt.strftime("%b %-d") if dt else wk)
+        values.append(round(weekly[wk]))
+
+    avg = round(sum(values) / len(values)) if values else 0
+    return {"labels": labels, "values": values, "avg": avg}
+
+
+def get_weekly_capacity_pct() -> dict:
+    """Per-employee % of weekly capacity used, for the violation trend chart."""
+    conn = get_conn()
+    sched = conn.execute(
+        "SELECT employee_name, start_date, hours FROM schedule"
+    ).fetchall()
+    emps = conn.execute(
+        "SELECT name, capacity_pct FROM employees ORDER BY capacity_pct DESC"
+    ).fetchall()
+    conn.close()
+
+    weekly = _build_weekly_hours(sched)
+    all_weeks = sorted({_week_key(r["start_date"]) for r in sched if _week_key(r["start_date"])})
+
+    # Map week key → readable label from earliest actual date
+    week_anchor: dict[str, datetime] = {}
+    for row in sched:
+        wk = _week_key(row["start_date"])
+        if not wk:
+            continue
+        try:
+            dt = datetime.strptime(row["start_date"], "%Y-%m-%d")
+            if wk not in week_anchor or dt < week_anchor[wk]:
+                week_anchor[wk] = dt
+        except ValueError:
+            pass
+
+    labels = [
+        week_anchor[wk].strftime("%b %-d") if wk in week_anchor else wk
+        for wk in all_weeks
+    ]
+
+    employees = []
+    for emp in emps:
+        cap_h = round(emp["capacity_pct"] * 40, 1)
+        if cap_h <= 0:
+            continue
+        pct_per_week = [
+            round(weekly.get(emp["name"], {}).get(wk, 0) / cap_h * 100, 1)
+            for wk in all_weeks
+        ]
+        employees.append({"name": emp["name"], "cap_h": cap_h, "data": pct_per_week})
+
+    return {"labels": labels, "employees": employees}
+
+
+def compute_studio_health(
+    stats: dict,
+    capacity_data: list[dict],
+    revenue_by_service: list[dict],
+    revenue_by_client: list[dict],
+) -> dict:
+    """Composite 0-100 studio health score with narrative reasons."""
+    score = 100
+    good: list[str] = []
+    watch: list[str] = []
+
+    # ── 1. Capacity violations ────────────────────────────────────────────────
+    total_emp_weeks  = sum(e["total_weeks"]     for e in capacity_data)
+    total_viol_weeks = sum(e["violation_weeks"] for e in capacity_data)
+    viol_rate  = total_viol_weeks / total_emp_weeks if total_emp_weeks else 0
+    cap_penalty = round(viol_rate * 30)
+    score -= cap_penalty
+    violated_n = sum(1 for e in capacity_data if e["over_capacity"])
+    if violated_n == 0:
+        good.append("All staff within contracted hours — zero violations")
+    else:
+        watch.append(
+            f"{violated_n} of {len(capacity_data)} staff exceeded contracted hours"
+            f" ({total_viol_weeks} violation weeks)"
+        )
+
+    # ── 2. Budget discipline ──────────────────────────────────────────────────
+    over_b  = stats["over_budget_projects"]
+    total_p = stats["total_projects"]
+    if over_b == 0:
+        good.append(f"All {total_p} active projects delivered within hours budget")
+    elif over_b == 1:
+        score -= 3
+        watch.append(f"{over_b} project slightly over its hours budget")
+    else:
+        score -= min(15, over_b * 4)
+        watch.append(f"{over_b} of {total_p} projects exceeded hours budget")
+
+    # ── 3. Service concentration ──────────────────────────────────────────────
+    total_rev = stats["total_revenue"]
+    if revenue_by_service:
+        top = revenue_by_service[0]
+        top_pct = round(top["revenue"] / total_rev * 100, 1) if total_rev else 0
+        if top_pct > 50:
+            score -= 12
+            watch.append(
+                f"'{top['service']}' = {top_pct}% of revenue — single-service concentration risk"
+            )
+        elif top_pct > 35:
+            score -= 5
+            watch.append(f"'{top['service']}' is {top_pct}% of revenue — worth diversifying")
+        else:
+            good.append("Healthy service mix — no single service dominates")
+
+    # ── 4. Client concentration ───────────────────────────────────────────────
+    if revenue_by_client:
+        top_c     = revenue_by_client[0]
+        top_c_pct = round(top_c["revenue"] / total_rev * 100, 1) if total_rev else 0
+        if top_c_pct > 25:
+            score -= 8
+            watch.append(f"{top_c['client']} = {top_c_pct}% of revenue — key-account risk")
+        else:
+            good.append(f"Strong client spread — top client is only {top_c_pct}% of revenue")
+
+    # ── 5. Blended rate strength ──────────────────────────────────────────────
+    hrs = stats.get("total_hours_logged") or 1
+    blended = round(total_rev / hrs)
+    if blended >= 150:
+        good.append(f"${blended}/hr blended rate — solid margin")
+
+    score = max(0, min(100, round(score)))
+
+    if score >= 80:
+        label, color, bg = "Healthy",         "#16a34a", "#f0fdf4"
+    elif score >= 65:
+        label, color, bg = "Watch Items",     "#d97706", "#fffbeb"
+    else:
+        label, color, bg = "Needs Attention", "#dc2626", "#fef2f2"
+
+    return {
+        "score": score, "label": label, "color": color, "bg": bg,
+        "good": good, "watch": watch,
+    }
+
+
 def get_projects_summary() -> list[dict]:
     """All projects with actual hours & billed amount from schedule."""
     conn = get_conn()

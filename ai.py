@@ -38,22 +38,31 @@ def ask(prompt: str) -> str:
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
-def dashboard_alert(stats: dict, capacity_data: list[dict], projects: list[dict]) -> str:
-    over_cap = [e for e in capacity_data if e["over_capacity"]]
+def dashboard_alert(stats: dict, capacity_data: list[dict], projects: list[dict],
+                    rev_by_client: list[dict] | None = None,
+                    rev_by_service: list[dict] | None = None) -> str:
+    over_cap    = [e for e in capacity_data if e["over_capacity"]]
     over_budget = [p for p in projects if p["actual_hours"] > p["hours_budget"] and p["hours_budget"] > 0]
+    blended     = round(stats["total_revenue"] / stats["total_hours_logged"]) if stats.get("total_hours_logged") else 0
+    top_client  = rev_by_client[0] if rev_by_client else {}
+    top_service = rev_by_service[0] if rev_by_service else {}
     prompt = f"""
-You are a smart business assistant for Flight Design, a brand and graphic design studio owned by Ariana Wolf in Oakland, CA.
+You are a sharp business advisor for Flight Design, a brand and graphic design studio owned by Ariana Wolf in Oakland, CA.
 
-BUSINESS SNAPSHOT:
-{json.dumps(stats, indent=2)}
+STUDIO SNAPSHOT (13-week period):
+- Total billed: ${stats['total_revenue']:,.0f}
+- Blended rate: ${blended}/hr across {stats['total_employees']} staff
+- {stats['total_projects']} active projects, {stats['over_budget_projects']} over hours budget
+- Top client: {top_client.get('client','—')} at {top_client.get('pct',0)}% of revenue
+- Top service: {top_service.get('service','—')} at {top_service.get('pct',0)}% of revenue
 
-EMPLOYEES OVER THEIR CONTRACTED CAPACITY (name, allowed hrs/week, avg actual hrs/week):
-{json.dumps([{"name": e["name"], "allowed": e["allowed_hours_week"], "avg_actual": e["avg_weekly_hours"]} for e in over_cap], indent=2)}
+CAPACITY ALERTS ({len(over_cap)} staff with violation weeks):
+{chr(10).join(f"- {e['name']}: {e['violation_weeks']} of {e['total_weeks']} weeks over {e['allowed_hours_week']}h/wk contracted" for e in over_cap)}
 
-OVER-BUDGET PROJECTS (name, client, budgeted hours, actual hours):
-{json.dumps([{"project": p["name"], "client": p["client"], "budget_hrs": p["hours_budget"], "actual_hrs": p["actual_hours"]} for p in over_budget], indent=2)}
+OVER-BUDGET PROJECTS:
+{chr(10).join(f"- {p['name']} ({p['client']}): {p['actual_hours']:.1f}h vs {p['hours_budget']:.0f}h budget" for p in over_budget) or 'None'}
 
-Write a 2-sentence morning alert for Ariana. Name the single most urgent staffing or budget issue she should address today. Be warm, direct, and specific with real names and numbers. No bullet points.
+Write a 2-sentence morning brief for Ariana. Lead with the single most urgent operational issue using real names and numbers. Second sentence: one quick win she can act on today. Warm, direct, no bullet points.
 """
     return ask(prompt)
 
