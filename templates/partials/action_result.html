@@ -1,3 +1,4 @@
+{% set safe_id = "draft-" ~ (label | replace(" ","-") | lower | replace("(","") | replace(")","") | replace("&","")) %}
 <div style="margin:0 0 20px;background:linear-gradient(135deg,#f8fafc,#f1f5f9);
             border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px;
             box-shadow:0 2px 10px rgba(0,0,0,0.04)">
@@ -10,9 +11,9 @@
     </div>
     <button
       onclick="
-        const el = document.getElementById('draft-{{ label | replace(\" \",\"-\") | lower }}');
+        const el = document.getElementById('{{ safe_id }}');
         navigator.clipboard.writeText(el.innerText);
-        this.innerHTML = '✅ Copied!';
+        this.innerHTML = '\u2705 Copied!';
         this.style.background='#f0fdf4';
         this.style.color='#16a34a';
         this.style.borderColor='#bbf7d0';
@@ -22,7 +23,7 @@
           this.style.color='#64748b';
           this.style.borderColor='#e2e8f0';
         }, 2200)"
-      style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;border:none;
+      style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;
              cursor:pointer;background:white;color:#64748b;border:1px solid #e2e8f0;
              transition:all 0.2s;display:flex;align-items:center;gap:4px">
       📋 Copy text
@@ -30,7 +31,7 @@
   </div>
 
   <div style="background:white;border-radius:10px;padding:16px;border:1px solid #e8ecf4">
-    <p id="draft-{{ label | replace(' ', '-') | lower }}"
+    <p id="{{ safe_id }}"
        style="font-size:13px;color:#1e293b;line-height:1.75;margin:0;white-space:pre-wrap">{{ draft }}</p>
   </div>
 

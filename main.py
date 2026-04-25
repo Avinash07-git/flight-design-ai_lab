@@ -261,10 +261,10 @@ async def chat(request: Request):
     question = form.get("question", "").strip()
     if not question:
         return HTMLResponse("<p class='text-gray-400 italic'>Please type a question.</p>")
-    employees = db.fetch_all("employees")
-    projects = db.get_projects_summary()
-    schedule = db.fetch_all("schedule")
-    answer = ai.chat_response(question, employees, projects, schedule)
+    employees         = db.fetch_all("employees")
+    project_health    = db.get_project_health()
+    staff_availability = db.get_staff_week_availability()
+    answer = ai.chat_response(question, employees, project_health, staff_availability)
     return templates.TemplateResponse("partials/chat_bubble.html", {
         "request": request,
         "question": question,
@@ -306,12 +306,40 @@ async def action_capacity_report(request: Request):
     })
 
 
-@app.post("/api/action/budget-report", response_class=HTMLResponse)
-async def action_budget_report(request: Request):
-    projects = db.get_projects_summary()
-    draft = ai.project_budget_report(projects)
+@app.post("/api/action/project-risk", response_class=HTMLResponse)
+async def action_project_risk(request: Request):
+    """Use pre-computed health + availability to give a concrete rebalancing recommendation."""
+    project_health     = db.get_project_health()
+    staff_availability = db.get_staff_week_availability()
+    draft = ai.project_risk_analysis(project_health, staff_availability)
+    return templates.TemplateResponse("partials/action_result.html", {
+        "request":  request,
+        "label":    "Project Risk & Staff Rebalancing",
+        "draft":    draft,
+    })
+
+
+@app.post("/api/action/budget-overrun", response_class=HTMLResponse)
+async def action_budget_overrun(request: Request):
+    """Draft client emails for every project that has blown its hours budget."""
+    project_health = db.get_project_health()
+    over_projects  = [p for p in project_health if p["risk"] == "OVER"]
+
+    if not over_projects:
+        return templates.TemplateResponse("partials/action_result.html", {
+            "request": request,
+            "label":   "Budget Overrun Emails",
+            "draft":   "✅ Great news — no projects are currently over budget! All tracked projects are within their hours allocation.",
+        })
+
+    # Generate one email per overrun project, join with dividers
+    emails = []
+    for proj in over_projects:
+        emails.append(f"### {proj['name']}\n" + ai.budget_overrun_email(proj))
+    draft = "\n\n---\n\n".join(emails)
+
     return templates.TemplateResponse("partials/action_result.html", {
         "request": request,
-        "label": "Project Budget Status Report",
-        "draft": draft,
+        "label":   f"Budget Overrun Emails ({len(over_projects)} project{'s' if len(over_projects)>1 else ''})",
+        "draft":   draft,
     })

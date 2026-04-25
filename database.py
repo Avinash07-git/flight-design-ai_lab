@@ -2,7 +2,7 @@ import sqlite3
 import csv
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 
 DB_PATH = "flight_design.db"
@@ -605,4 +605,141 @@ def get_projects_summary(start: str = "", end: str = "") -> list[dict]:
         d["start_date"] = d.pop("proj_start", None)
         d["end_date"]   = d.pop("proj_end",   None)
         result.append(d)
+    return result
+
+
+# ── Smart-action queries ─────────────────────────────────────────────────────
+
+def get_project_health() -> list[dict]:
+    """Per-project budget health with risk classification.
+
+    Returns one row per project (only those with a hours budget) containing:
+    - budget_pct    : actual / budget * 100  (over 100 = blown)
+    - remaining_h   : hours left in budget   (negative = over)
+    - risk          : 'OVER' | 'AT_RISK' | 'OK' | 'T&M'
+    - this_week_h   : hours logged in the most-recent data week
+    """
+    conn = get_conn()
+
+    # Most-recent week boundaries from the data itself
+    latest = conn.execute(
+        "SELECT MAX(start_date) FROM schedule"
+    ).fetchone()[0] or ""
+    if latest:
+        hi            = datetime.strptime(latest, "%Y-%m-%d")
+        week_mon      = (hi - timedelta(days=hi.weekday())).strftime("%Y-%m-%d")
+        week_sun      = (hi - timedelta(days=hi.weekday()) + timedelta(days=6)).strftime("%Y-%m-%d")
+    else:
+        week_mon = week_sun = ""
+
+    rows = conn.execute("""
+        SELECT
+            p.name, p.client, p.service,
+            p.hours_budget,
+            p.budget_usd,
+            COALESCE(SUM(s.hours),  0) AS actual_hours,
+            COALESCE(SUM(s.amount), 0) AS billed_amount,
+            COALESCE(SUM(CASE WHEN s.start_date >= ? AND s.start_date <= ?
+                             THEN s.hours ELSE 0 END), 0) AS this_week_h,
+            COUNT(DISTINCT s.employee_name)               AS assigned_staff
+        FROM projects p
+        LEFT JOIN schedule s ON s.project = p.name
+        GROUP BY p.name
+        ORDER BY p.hours_budget DESC
+    """, (week_mon, week_sun)).fetchall()
+    conn.close()
+
+    result = []
+    for r in rows:
+        budget_h = r["hours_budget"]
+        actual_h = r["actual_hours"]
+        if budget_h and budget_h > 0:
+            remaining_h = round(budget_h - actual_h, 1)
+            budget_pct  = round(actual_h / budget_h * 100, 1)
+            if budget_pct > 100:
+                risk = "OVER"
+            elif budget_pct > 80:
+                risk = "AT_RISK"
+            else:
+                risk = "OK"
+        else:
+            remaining_h = None
+            budget_pct  = None
+            risk        = "T&M"
+
+        result.append({
+            "name":          r["name"],
+            "client":        r["client"],
+            "service":       r["service"],
+            "hours_budget":  budget_h,
+            "budget_usd":    r["budget_usd"],
+            "actual_hours":  round(actual_h, 1),
+            "billed_amount": round(r["billed_amount"], 2),
+            "remaining_h":   remaining_h,
+            "budget_pct":    budget_pct,
+            "risk":          risk,
+            "this_week_h":   round(r["this_week_h"], 1),
+            "assigned_staff": r["assigned_staff"],
+        })
+    return result
+
+
+def get_staff_week_availability() -> list[dict]:
+    """Free capacity per team member for the most-recent week in the data.
+
+    Returns list sorted by free_hours descending (most-available first).
+    """
+    conn = get_conn()
+
+    latest = conn.execute(
+        "SELECT MAX(start_date) FROM schedule"
+    ).fetchone()[0] or ""
+    if latest:
+        hi       = datetime.strptime(latest, "%Y-%m-%d")
+        week_mon = (hi - timedelta(days=hi.weekday())).strftime("%Y-%m-%d")
+        week_sun = (hi - timedelta(days=hi.weekday()) + timedelta(days=6)).strftime("%Y-%m-%d")
+    else:
+        week_mon = week_sun = ""
+
+    employees = conn.execute(
+        "SELECT name, employee_type, bill_rate, capacity_pct FROM employees"
+    ).fetchall()
+    week_rows = conn.execute(
+        "SELECT employee_name, project, client, SUM(hours) AS hrs "
+        "FROM schedule WHERE start_date >= ? AND start_date <= ? "
+        "GROUP BY employee_name, project",
+        (week_mon, week_sun),
+    ).fetchall()
+    conn.close()
+
+    # Hours per employee this week
+    week_hrs: dict[str, float] = defaultdict(float)
+    week_projects: dict[str, list[str]] = defaultdict(list)
+    for r in week_rows:
+        week_hrs[r["employee_name"]]     += r["hrs"]
+        week_projects[r["employee_name"]].append(r["project"])
+
+    result = []
+    for emp in employees:
+        contracted_h    = round(emp["capacity_pct"] * 40, 1)
+        scheduled_h     = round(week_hrs.get(emp["name"], 0), 1)
+        free_h          = round(contracted_h - scheduled_h, 1)
+        utilization_pct = round(scheduled_h / contracted_h * 100) if contracted_h else 0
+        result.append({
+            "name":            emp["name"],
+            "employee_type":   emp["employee_type"],
+            "bill_rate":       emp["bill_rate"],
+            "contracted_h":    contracted_h,
+            "scheduled_h":     scheduled_h,
+            "free_h":          free_h,
+            "utilization_pct": utilization_pct,
+            "overloaded":      free_h < 0,
+            "has_capacity":    free_h > 1,     # >1h truly free
+            "current_projects": week_projects.get(emp["name"], []),
+            "week_start":       week_mon,
+            "week_end":         week_sun,
+        })
+
+    # Most-available first
+    result.sort(key=lambda x: x["free_h"], reverse=True)
     return result

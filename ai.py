@@ -131,41 +131,191 @@ Be direct and practical. No bullet points — write as a paragraph.
     return ask(prompt, fallback=fallback)
 
 
-# ── Chat ──────────────────────────────────────────────────────────────────────
+# ── Chat ─────────────────────────────────────────────────────────────
 
-def chat_response(question: str, employees: list[dict], projects: list[dict],
-                  schedule: list[dict]) -> str:
-    # Summarise schedule to avoid token bloat — group by employee + project
-    from collections import defaultdict
-    summary: dict = defaultdict(lambda: {"hours": 0.0, "amount": 0.0})
-    for row in schedule:
-        key = f"{row['employee_name']} → {row['project']}"
-        summary[key]["hours"] += row.get("hours", 0)
-        summary[key]["amount"] += row.get("amount", 0)
+def chat_response(
+    question: str,
+    employees: list[dict],
+    project_health: list[dict],        # from db.get_project_health()
+    staff_availability: list[dict],    # from db.get_staff_week_availability()
+) -> str:
+    """Answer a free-form business question using rich, pre-computed context.
+
+    Uses project_health (budget burn %, remaining hours, risk flag, this-week
+    hours) and staff_availability (contracted vs scheduled this week, free hours)
+    so the AI never has to guess or misread raw schedule rows.
+    """
+    # Compact representations to stay within token budget
+    proj_ctx = [
+        {
+            "project":      p["name"],
+            "client":       p["client"],
+            "service":      p["service"],
+            "budget_h":     p["hours_budget"],
+            "actual_h":     p["actual_hours"],
+            "remaining_h":  p["remaining_h"],
+            "burn_pct":     p["budget_pct"],
+            "risk":         p["risk"],          # OVER / AT_RISK / OK / T&M
+            "this_week_h":  p["this_week_h"],
+        }
+        for p in project_health if p["hours_budget"] and p["hours_budget"] > 0
+    ]
+
+    staff_ctx = [
+        {
+            "name":          e["name"],
+            "type":          e["employee_type"],
+            "rate":          e["bill_rate"],
+            "contracted_h":  e["contracted_h"],
+            "scheduled_h":   e["scheduled_h"],
+            "free_h":        e["free_h"],       # negative = already over
+            "status":        "OVER" if e["overloaded"] else ("FREE" if e["has_capacity"] else "FULL"),
+            "current_projects": e["current_projects"],
+        }
+        for e in staff_availability
+    ]
+
+    week_ref = staff_availability[0]["week_start"] if staff_availability else "current week"
 
     prompt = f"""
 You are a smart business assistant for Flight Design, a brand design studio owned by Ariana Wolf in Oakland, CA.
-Answer the question using ONLY the data provided. Be concise, specific, and helpful.
-If the data doesn't contain enough information to answer, say so honestly.
+Answer the question using ONLY the data provided. Be specific with names and numbers. If the data
+doesn't have enough info, say so honestly. Keep answers under 150 words.
 
-EMPLOYEES (name, type, bill rate, capacity %):
-{json.dumps([{"name": e["name"], "type": e["employee_type"], "rate": e["bill_rate"], "capacity_pct": e["capacity_pct"]} for e in employees], indent=2)}
+DATA WEEK REFERENCE: {week_ref}
 
-PROJECTS (name, client, service, hours budget, budget USD):
-{json.dumps([{"name": p["name"], "client": p["client"], "service": p["service"], "hours_budget": p["hours_budget"], "budget_usd": p["budget_usd"]} for p in projects], indent=2)}
+PROJECT HEALTH (budget status + this-week hours):
+  Fields: project, client, service, budget_h, actual_h, remaining_h, burn_pct, risk (OVER/AT_RISK/OK/T&M), this_week_h
+{json.dumps(proj_ctx, indent=2)}
 
-SCHEDULE SUMMARY (employee → project: total hours, total billed):
-{json.dumps([{"assignment": k, "hours": round(v["hours"],1), "billed": v["amount"]} for k, v in summary.items()], indent=2)}
+STAFF THIS WEEK (contracted vs scheduled, free hours available):
+  Fields: name, type, rate, contracted_h, scheduled_h, free_h (negative=over), status (FREE/FULL/OVER), current_projects
+{json.dumps(staff_ctx, indent=2)}
 
 QUESTION: {question}
-
-Answer in plain English. Use specific names and numbers. Keep it under 120 words.
 """
     return ask(prompt, fallback=(
-        "I can answer questions about team capacity, project budgets, revenue by client, "
-        "and scheduling — but AI chat is temporarily paused (quota reached). "
-        "All the data on the dashboard is still fully live and accurate."
+        "AI chat is temporarily paused (quota reached). "
+        "All dashboard data is still live — check the Dashboard and Capacity tabs for real-time numbers."
     ))
+
+
+# ── Smart Actions ─────────────────────────────────────────────────────────────
+
+def project_risk_analysis(
+    project_health: list[dict],
+    staff_availability: list[dict],
+) -> str:
+    """Identify at-risk projects and recommend specific staff rebalancing."""
+    at_risk = [p for p in project_health if p["risk"] in ("OVER", "AT_RISK")]
+    available = [e for e in staff_availability if e["has_capacity"] and not e["overloaded"]]
+    overloaded = [e for e in staff_availability if e["overloaded"]]
+
+    week_ref = staff_availability[0]["week_start"] if staff_availability else "this week"
+
+    # Deterministic fallback — no AI needed
+    if not at_risk:
+        over_proj = [p for p in project_health if p["risk"] == "OVER"]
+        if over_proj:
+            p = over_proj[0]
+            fallback = (
+                f"{p['name']} has exceeded its hours budget by {abs(p['remaining_h']):.1f}h "
+                f"({p['budget_pct']:.0f}% burned). "
+                + (f"{available[0]['name']} has {available[0]['free_h']:.1f}h free this week "
+                   f"and could be reassigned to help close it out."
+                   if available else "No staff have free capacity this week.")
+            )
+        else:
+            fallback = (
+                "No projects are currently at risk. All budgeted projects are under 80% burned. "
+                + (f"{available[0]['name']} has {available[0]['free_h']:.1f}h of unscheduled capacity "
+                   f"this week that could be used proactively."
+                   if available else "")
+            )
+    else:
+        p = at_risk[0]
+        a = available[0] if available else None
+        fallback = (
+            f"{p['name']} is {p['risk']} at {p['budget_pct']:.0f}% budget burn "
+            f"({p['remaining_h']:+.1f}h remaining). "
+            + (f"Recommend assigning {a['name']} ({a['free_h']:.1f}h free this week) to this project."
+               if a else "No staff have free capacity to reassign right now.")
+        )
+
+    prompt = f"""
+You are a sharp business advisor for Flight Design (Ariana Wolf, Oakland CA).
+Analyse the project risk and staff availability data, then give a concrete, actionable rebalancing recommendation.
+
+WEEK: {week_ref}
+
+AT-RISK / OVER-BUDGET PROJECTS:
+{json.dumps([{"project": p["name"], "client": p["client"], "service": p["service"],
+              "risk": p["risk"], "burn_pct": p["budget_pct"],
+              "remaining_h": p["remaining_h"], "this_week_h": p["this_week_h"],
+              "assigned_staff": p["assigned_staff"]} for p in at_risk], indent=2)
+if at_risk else "[None — all projects within budget]"}
+
+STAFF WITH FREE CAPACITY THIS WEEK:
+{json.dumps([{"name": e["name"], "type": e["employee_type"], "free_h": e["free_h"],
+              "current_projects": e["current_projects"]} for e in available], indent=2)
+if available else "[None — everyone is fully scheduled]"}
+
+OVERLOADED STAFF (already over contracted hours):
+{json.dumps([{"name": e["name"], "over_by_h": abs(e["free_h"]),
+              "current_projects": e["current_projects"]} for e in overloaded], indent=2)
+if overloaded else "[None]"}
+
+Write 3–4 sentences:
+1. Name the project(s) at risk and why (burn rate + remaining hours).
+2. Name specifically which staff member(s) should be reassigned, how many hours they can take on, and to which project.
+3. Flag anyone overloaded that Ariana should pull work FROM.
+Be direct. Use real names and numbers. No bullet points.
+"""
+    return ask(prompt, fallback=fallback)
+
+
+def budget_overrun_email(project: dict) -> str:
+    """Draft a professional client communication for a budget-overrun project."""
+    over_by   = abs(project.get("remaining_h", 0))
+    burn_pct  = project.get("budget_pct", 0)
+    est_extra = round(over_by * 175)   # $175/hr blended rate estimate
+
+    fallback = (
+        f"Subject: Budget Update — {project['name']}\n\n"
+        f"Hi [Client name],\n\n"
+        f"We want to proactively flag that the {project['service']} work for your project has "
+        f"reached {burn_pct:.0f}% of the originally scoped {project['hours_budget']:.0f} hours. "
+        f"We've logged {project['actual_hours']:.1f}h to date, and the remaining scope will require "
+        f"approximately {over_by:.1f} additional hours (est. ${est_extra:,.0f} at our blended rate).\n\n"
+        f"We'd love to schedule a quick call to discuss options: scope reduction, a budget amendment, "
+        f"or phasing the remaining work into a follow-on engagement.\n\n"
+        f"Looking forward to your thoughts,\nFlight Design"
+    )
+
+    prompt = f"""
+You are drafting a professional, warm client email on behalf of Ariana Wolf at Flight Design,
+a brand and graphic design studio in Oakland, CA.
+
+PROJECT DETAILS:
+- Project: {project["name"]}
+- Client: {project["client"]}
+- Service: {project["service"]}
+- Hours budget: {project["hours_budget"]} h
+- Hours logged: {project["actual_hours"]} h  ({burn_pct:.0f}% burned)
+- Hours over budget: {over_by:.1f} h
+- Estimated cost of overage at $175/hr blended rate: ${est_extra:,.0f}
+
+Write a short, professional email (under 120 words, not counting subject line) that:
+1. Opens warmly and gets straight to the point
+2. States clearly that the project is approaching or has exceeded the scoped hours
+3. Gives the exact numbers (hours used, overage, estimated cost)
+4. Offers 3 options: scope reduction, budget amendment, or phase into a new engagement
+5. Invites a quick call to align
+6. Signs off as Ariana Wolf, Flight Design
+
+Subject line first, then the email body. Professional but warm tone.
+"""
+    return ask(prompt, fallback=fallback)
 
 
 # ── Smart Actions ─────────────────────────────────────────────────────────────
