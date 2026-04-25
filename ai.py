@@ -5,35 +5,44 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Best models first; Gemma models are separate quota and act as reliable fallbacks
 MODELS_TO_TRY = [
     "models/gemini-2.5-flash",
-    "models/gemini-2.0-flash-001",
     "models/gemini-2.0-flash",
+    "models/gemini-2.0-flash-001",
+    "models/gemma-3-12b-it",   # separate quota pool — usually available
+    "models/gemma-3-4b-it",
+    "models/gemma-3-1b-it",
 ]
 
+_QUOTA_MSG = (
+    "AI insights are temporarily paused — the Gemini free-tier quota is exhausted for today. "
+    "Everything else on the dashboard is fully live. "
+    "Get a fresh key at aistudio.google.com (free, takes 30 seconds)."
+)
 
-def _get_model(model_name: str):
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(model_name)
+
+def _configure():
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
 
-def ask(prompt: str) -> str:
+def ask(prompt: str, fallback: str = "") -> str:
+    """Try each model in order. Returns fallback text (or quota message) on total failure."""
     if not os.environ.get("GEMINI_API_KEY"):
-        return "⚠️ No API key set. Add GEMINI_API_KEY to your .env file and restart."
-    last_error = ""
-    for model_name in MODELS_TO_TRY:
+        return fallback or "⚠️ Add GEMINI_API_KEY to your .env file and restart."
+    _configure()
+    last_err = ""
+    for name in MODELS_TO_TRY:
         try:
-            model = _get_model(model_name)
-            response = model.generate_content(prompt)
-            return response.text.strip()
-        except Exception as e:
-            last_error = str(e)
-            if "404" in last_error or "not found" in last_error.lower():
-                continue
-            if "429" in last_error:
-                continue
-    return "⚠️ AI unavailable right now — please check your Gemini API key quota."
+            resp = genai.GenerativeModel(name).generate_content(prompt)
+            return resp.text.strip()
+        except Exception as exc:
+            last_err = str(exc)
+            # 404 = model not on this key → try next
+            # 429 = quota → try next (Gemma has its own bucket)
+            # anything else → try next too
+            continue
+    return fallback or _QUOTA_MSG
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -46,6 +55,24 @@ def dashboard_alert(stats: dict, capacity_data: list[dict], projects: list[dict]
     blended     = round(stats["total_revenue"] / stats["total_hours_logged"]) if stats.get("total_hours_logged") else 0
     top_client  = rev_by_client[0] if rev_by_client else {}
     top_service = rev_by_service[0] if rev_by_service else {}
+
+    # Data-driven fallback — works even with no AI
+    worst = max(over_cap, key=lambda e: e["violation_weeks"]) if over_cap else None
+    if worst:
+        fallback = (
+            f"{worst['name']} has exceeded their {worst['allowed_hours_week']}h/wk contracted limit "
+            f"in {worst['violation_weeks']} of {worst['total_weeks']} weeks — the most pressing capacity issue right now. "
+            f"With {len(over_cap)} staff running hot and Website Design at "
+            f"{top_service.get('pct', '?')}% of revenue, consider reviewing project load before taking on new work."
+        )
+    else:
+        fallback = (
+            f"Studio is running well — ${stats['total_revenue']:,.0f} billed across "
+            f"{stats['total_projects']} projects at a ${blended}/hr blended rate. "
+            f"No capacity violations this period. Focus on diversifying beyond "
+            f"{top_service.get('service', 'Website Design')} ({top_service.get('pct', '?')}% of revenue)."
+        )
+
     prompt = f"""
 You are a sharp business advisor for Flight Design, a brand and graphic design studio owned by Ariana Wolf in Oakland, CA.
 
@@ -64,12 +91,30 @@ OVER-BUDGET PROJECTS:
 
 Write a 2-sentence morning brief for Ariana. Lead with the single most urgent operational issue using real names and numbers. Second sentence: one quick win she can act on today. Warm, direct, no bullet points.
 """
-    return ask(prompt)
+    return ask(prompt, fallback=fallback)
 
 
 # ── Capacity ──────────────────────────────────────────────────────────────────
 
 def capacity_insight(capacity_data: list[dict]) -> str:
+    over    = [e for e in capacity_data if e["over_capacity"]]
+    worst   = max(over, key=lambda e: e["violation_weeks"]) if over else None
+    total_v = sum(e["violation_weeks"] for e in over)
+
+    if worst:
+        fallback = (
+            f"{len(over)} of {len(capacity_data)} staff exceeded their contracted hours, "
+            f"with {worst['name']} the most impacted at {worst['violation_weeks']} violation weeks "
+            f"(avg {worst['avg_weekly_hours']}h vs {worst['allowed_hours_week']}h contracted). "
+            f"That's {total_v} employee-weeks of uncompensated overwork — "
+            f"time to review contracts or trim project load before burnout hits."
+        )
+    else:
+        fallback = (
+            f"All {len(capacity_data)} team members stayed within their contracted hours this period. "
+            f"Good discipline — keep monitoring as new projects come in."
+        )
+
     prompt = f"""
 You are a business analyst for Flight Design, a brand design studio run by Ariana Wolf in Oakland, CA.
 
@@ -83,7 +128,7 @@ Write 3–4 sentences analysing the team's capacity situation. Be specific:
 
 Be direct and practical. No bullet points — write as a paragraph.
 """
-    return ask(prompt)
+    return ask(prompt, fallback=fallback)
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
@@ -116,7 +161,11 @@ QUESTION: {question}
 
 Answer in plain English. Use specific names and numbers. Keep it under 120 words.
 """
-    return ask(prompt)
+    return ask(prompt, fallback=(
+        "I can answer questions about team capacity, project budgets, revenue by client, "
+        "and scheduling — but AI chat is temporarily paused (quota reached). "
+        "All the data on the dashboard is still fully live and accurate."
+    ))
 
 
 # ── Smart Actions ─────────────────────────────────────────────────────────────
@@ -140,7 +189,12 @@ Generate a weekly briefing with these bold sections:
 
 Use bold headers. Be specific with names and numbers. Keep each section to 1–2 sentences.
 """
-    return ask(prompt)
+    return ask(prompt, fallback=(
+        f"**Weekly Briefing**\n\n"
+        f"**Top Priority:** {len([e for e in capacity_data if e['over_capacity']])} staff exceeded capacity — review workload distribution.\n\n"
+        f"**Revenue:** ${stats.get('total_revenue',0):,.0f} billed · ${round(stats.get('total_revenue',0)/max(stats.get('total_projects',1),1)):,.0f} per project avg.\n\n"
+        f"**Budget Watch:** {stats.get('over_budget_projects',0)} project(s) over hours budget."
+    ))
 
 
 def capacity_violation_report(capacity_data: list[dict]) -> str:
@@ -158,7 +212,11 @@ Write a concise capacity violation report that:
 
 Format as a professional memo. Use bold for employee names. Keep it under 150 words.
 """
-    return ask(prompt)
+    return ask(prompt, fallback=(
+        f"{len(over_cap)} employee(s) exceeded contracted hours. "
+        f"Most severe: {max(over_cap, key=lambda e: e['violation_weeks'])['name'] if over_cap else 'n/a'}. "
+        f"Consider reducing project intake or renegotiating contracts."
+    ))
 
 
 def project_budget_report(projects: list[dict]) -> str:
@@ -180,4 +238,7 @@ Write a concise project budget status report:
 
 Format professionally with bold project names. Under 150 words.
 """
-    return ask(prompt)
+    return ask(prompt, fallback=(
+        f"{len(over_budget)} project(s) over hours budget. "
+        f"Review logged hours against scope — flag to clients before invoicing."
+    ))
