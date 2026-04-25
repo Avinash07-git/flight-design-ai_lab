@@ -82,6 +82,41 @@ def init_db():
     conn.close()
 
 
+def get_date_bounds() -> dict:
+    """Min and max start_date in the schedule table."""
+    conn = get_conn()
+    row  = conn.execute(
+        "SELECT MIN(start_date) as lo, MAX(start_date) as hi FROM schedule"
+    ).fetchone()
+    conn.close()
+    return {"start": row["lo"] or "", "end": row["hi"] or ""}
+
+
+def _date_where(start: str, end: str, table: str = "") -> tuple[str, list]:
+    """Returns (SQL snippet, params) to safely filter on a date column.
+
+    Args:
+        start: lower bound (YYYY-MM-DD) or empty string
+        end:   upper bound (YYYY-MM-DD) or empty string
+        table: optional table alias to qualify the column (e.g. 's' → 's.start_date')
+
+    Usage::
+        extra, params = _date_where(start, end)
+        conn.execute(f"SELECT ... FROM schedule WHERE 1=1 {extra}", params)
+    """
+    col = f"{table}.start_date" if table else "start_date"
+    clauses: list[str] = []
+    params:  list[str] = []
+    if start:
+        clauses.append(f"{col} >= ?")
+        params.append(start)
+    if end:
+        clauses.append(f"{col} <= ?")
+        params.append(end)
+    sql = ("AND " + " AND ".join(clauses)) if clauses else ""
+    return sql, params
+
+
 def is_data_loaded() -> bool:
     conn = get_conn()
     row = conn.execute("SELECT loaded FROM session WHERE id=1").fetchone()
@@ -200,31 +235,33 @@ def _build_weekly_hours(schedule_rows) -> dict[str, dict[str, float]]:
     return weekly
 
 
-def get_dashboard_stats() -> dict:
+def get_dashboard_stats(start: str = "", end: str = "") -> dict:
+    extra, params = _date_where(start, end)
+    extra_s, params_s = _date_where(start, end, table="s")
     conn = get_conn()
     total_revenue = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) as t FROM schedule"
+        f"SELECT COALESCE(SUM(amount),0) as t FROM schedule WHERE 1=1 {extra}", params
     ).fetchone()["t"]
     total_hours = conn.execute(
-        "SELECT COALESCE(SUM(hours),0) as t FROM schedule"
+        f"SELECT COALESCE(SUM(hours),0) as t FROM schedule WHERE 1=1 {extra}", params
     ).fetchone()["t"]
     total_projects = conn.execute(
-        "SELECT COUNT(DISTINCT project) as n FROM schedule WHERE hours > 0"
+        f"SELECT COUNT(DISTINCT project) as n FROM schedule WHERE hours > 0 {extra}", params
     ).fetchone()["n"]
     total_employees = conn.execute("SELECT COUNT(*) as n FROM employees").fetchone()["n"]
-    over_budget = conn.execute("""
+    over_budget = conn.execute(f"""
         SELECT COUNT(*) as n FROM (
             SELECT p.name, p.hours_budget, COALESCE(SUM(s.hours),0) as actual
             FROM projects p
-            LEFT JOIN schedule s ON s.project = p.name
+            LEFT JOIN schedule s ON s.project = p.name AND 1=1 {extra_s}
             GROUP BY p.name
             HAVING actual > p.hours_budget AND p.hours_budget > 0
         )
-    """).fetchone()["n"]
+    """, params_s).fetchone()["n"]
 
     # Capacity violations — computed in Python
     sched_rows = conn.execute(
-        "SELECT employee_name, start_date, hours FROM schedule"
+        f"SELECT employee_name, start_date, hours FROM schedule WHERE 1=1 {extra}", params
     ).fetchall()
     emp_rows = conn.execute("SELECT name, capacity_pct FROM employees").fetchall()
     conn.close()
@@ -246,14 +283,15 @@ def get_dashboard_stats() -> dict:
     }
 
 
-def get_capacity_data() -> list[dict]:
+def get_capacity_data(start: str = "", end: str = "") -> list[dict]:
     """Per-employee capacity analysis vs actual schedule."""
+    extra, params = _date_where(start, end)
     conn = get_conn()
     employees = conn.execute(
         "SELECT * FROM employees ORDER BY capacity_pct DESC"
     ).fetchall()
     sched_rows = conn.execute(
-        "SELECT employee_name, start_date, hours FROM schedule"
+        f"SELECT employee_name, start_date, hours FROM schedule WHERE 1=1 {extra}", params
     ).fetchall()
     conn.close()
 
@@ -285,18 +323,21 @@ def get_capacity_data() -> list[dict]:
     return result
 
 
-def get_revenue_by_employee() -> list[dict]:
+def get_revenue_by_employee(start: str = "", end: str = "") -> list[dict]:
     """Revenue, hours, and % share per employee, sorted by revenue desc."""
+    extra, params = _date_where(start, end)
     conn = get_conn()
-    total_rev = conn.execute("SELECT COALESCE(SUM(amount),0) FROM schedule").fetchone()[0]
-    rows = conn.execute("""
+    total_rev = conn.execute(
+        f"SELECT COALESCE(SUM(amount),0) FROM schedule WHERE 1=1 {extra}", params
+    ).fetchone()[0]
+    rows = conn.execute(f"""
         SELECT employee_name AS name,
                COALESCE(SUM(amount),0) AS revenue,
                COALESCE(SUM(hours),0)  AS hours
-        FROM schedule
+        FROM schedule WHERE 1=1 {extra}
         GROUP BY employee_name
         ORDER BY revenue DESC
-    """).fetchall()
+    """, params).fetchall()
     conn.close()
     result = []
     for r in rows:
@@ -309,20 +350,23 @@ def get_revenue_by_employee() -> list[dict]:
     return result
 
 
-def get_revenue_by_client() -> list[dict]:
+def get_revenue_by_client(start: str = "", end: str = "") -> list[dict]:
     """Revenue per client with % share, sorted desc."""
+    extra, params = _date_where(start, end)
     conn = get_conn()
-    total_rev = conn.execute("SELECT COALESCE(SUM(amount),0) FROM schedule").fetchone()[0]
-    rows = conn.execute("""
+    total_rev = conn.execute(
+        f"SELECT COALESCE(SUM(amount),0) FROM schedule WHERE 1=1 {extra}", params
+    ).fetchone()[0]
+    rows = conn.execute(f"""
         SELECT client,
                COALESCE(SUM(amount),0)            AS revenue,
                COALESCE(SUM(hours),0)             AS hours,
                COUNT(DISTINCT project)            AS projects,
                COUNT(DISTINCT employee_name)      AS staff
-        FROM schedule
+        FROM schedule WHERE 1=1 {extra}
         GROUP BY client
         ORDER BY revenue DESC
-    """).fetchall()
+    """, params).fetchall()
     conn.close()
     result = []
     for r in rows:
@@ -337,18 +381,21 @@ def get_revenue_by_client() -> list[dict]:
     return result
 
 
-def get_revenue_by_service() -> list[dict]:
+def get_revenue_by_service(start: str = "", end: str = "") -> list[dict]:
     """Revenue per service type with % share, sorted desc."""
+    extra, params = _date_where(start, end)
     conn = get_conn()
-    total_rev = conn.execute("SELECT COALESCE(SUM(amount),0) FROM schedule").fetchone()[0]
-    rows = conn.execute("""
+    total_rev = conn.execute(
+        f"SELECT COALESCE(SUM(amount),0) FROM schedule WHERE 1=1 {extra}", params
+    ).fetchone()[0]
+    rows = conn.execute(f"""
         SELECT service,
                COALESCE(SUM(amount),0) AS revenue,
                COALESCE(SUM(hours),0)  AS hours
-        FROM schedule
+        FROM schedule WHERE 1=1 {extra}
         GROUP BY service
         ORDER BY revenue DESC
-    """).fetchall()
+    """, params).fetchall()
     conn.close()
     result = []
     for r in rows:
@@ -361,10 +408,13 @@ def get_revenue_by_service() -> list[dict]:
     return result
 
 
-def get_weekly_revenue_trend() -> dict:
+def get_weekly_revenue_trend(start: str = "", end: str = "") -> dict:
     """Weekly billed totals for the trend line chart."""
+    extra, params = _date_where(start, end)
     conn = get_conn()
-    rows = conn.execute("SELECT start_date, amount FROM schedule").fetchall()
+    rows = conn.execute(
+        f"SELECT start_date, amount FROM schedule WHERE 1=1 {extra}", params
+    ).fetchall()
     conn.close()
 
     weekly: dict[str, float] = defaultdict(float)
@@ -393,11 +443,12 @@ def get_weekly_revenue_trend() -> dict:
     return {"labels": labels, "values": values, "avg": avg}
 
 
-def get_weekly_capacity_pct() -> dict:
+def get_weekly_capacity_pct(start: str = "", end: str = "") -> dict:
     """Per-employee % of weekly capacity used, for the violation trend chart."""
+    extra, params = _date_where(start, end)
     conn = get_conn()
     sched = conn.execute(
-        "SELECT employee_name, start_date, hours FROM schedule"
+        f"SELECT employee_name, start_date, hours FROM schedule WHERE 1=1 {extra}", params
     ).fetchall()
     emps = conn.execute(
         "SELECT name, capacity_pct FROM employees ORDER BY capacity_pct DESC"
@@ -524,21 +575,34 @@ def compute_studio_health(
     }
 
 
-def get_projects_summary() -> list[dict]:
+def get_projects_summary(start: str = "", end: str = "") -> list[dict]:
     """All projects with actual hours & billed amount from schedule."""
+    extra_s, params_s = _date_where(start, end, table="s")
     conn = get_conn()
-    rows = conn.execute("""
+    # Filter schedule to date range via CTE, then join — clean single-pass params
+    rows = conn.execute(f"""
+        WITH sched AS (
+            SELECT * FROM schedule s WHERE 1=1 {extra_s}
+        )
         SELECT
             p.name, p.client, p.service,
             p.hours_budget, p.budget_usd,
-            p.start_date, p.end_date,
-            COALESCE(SUM(s.hours), 0)  AS actual_hours,
-            COALESCE(SUM(s.amount), 0) AS billed_amount,
-            COUNT(DISTINCT s.employee_name) AS team_size
+            p.start_date   AS proj_start,
+            p.end_date     AS proj_end,
+            COALESCE(SUM(sched.hours),  0)              AS actual_hours,
+            COALESCE(SUM(sched.amount), 0)              AS billed_amount,
+            COUNT(DISTINCT sched.employee_name)         AS team_size
         FROM projects p
-        LEFT JOIN schedule s ON s.project = p.name
+        LEFT JOIN sched ON sched.project = p.name
         GROUP BY p.name
         ORDER BY actual_hours DESC
-    """).fetchall()
+    """, params_s).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    # normalise key names so templates see start_date / end_date
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["start_date"] = d.pop("proj_start", None)
+        d["end_date"]   = d.pop("proj_end",   None)
+        result.append(d)
+    return result

@@ -39,6 +39,7 @@
 </style>
 
 <!-- ── AI Morning Brief ──────────────────────────────────────────────────────── -->
+{% include "partials/_filter_bar.html" %}
 <div style="border-radius:16px;padding:18px 22px;margin-bottom:20px;
             background:linear-gradient(135deg,#1e1b4b,#312e81,#1e1b4b);
             border:1px solid rgba(167,139,250,0.2);
@@ -112,7 +113,7 @@
 <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
 
   {% set kpis = [
-    ("💰", "Total Billed", "${:,.0f}".format(stats.total_revenue), "13-week period · Apr–Jul 2026"),
+    ("💰", "Total Billed", "${:,.0f}".format(stats.total_revenue), period_label),
     ("⚡", "Blended Rate",  "$" ~ blended_rate ~ "/hr", "avg across all 8 staff"),
     ("📊", "Team Utilization", avg_utilization ~ "%", "of contracted hours, avg"),
     ("📁", "Projects Scheduled", stats.total_projects ~ "", "with hours logged this period"),
@@ -147,7 +148,7 @@
         </p>
       </div>
       <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;
-                   background:#ede9fe;color:#7c3aed">Apr → Jul 2026</span>
+                   background:#ede9fe;color:#7c3aed">{{ active_preset }}</span>
     </div>
     <div style="height:175px;position:relative"><canvas id="revTrendChart"></canvas></div>
   </div>

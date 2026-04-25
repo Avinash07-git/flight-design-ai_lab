@@ -1,7 +1,8 @@
 import csv
 import io
 import os
-from fastapi import FastAPI, Request, UploadFile, File
+from datetime import datetime, timedelta
+from fastapi import FastAPI, Request, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -16,6 +17,63 @@ if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
 db.init_db()
+
+
+# ── Date-range helpers ───────────────────────────────────────────────────────────
+
+def _resolve_dates(start: str, end: str) -> tuple[str, str]:
+    """Fill empty start/end with the actual data bounds."""
+    bounds = db.get_date_bounds()
+    return (start or bounds["start"]), (end or bounds["end"])
+
+
+def _build_presets(data_start: str, data_end: str) -> list[dict]:
+    """Return preset date-range pills relative to the data's max date."""
+    try:
+        hi = datetime.strptime(data_end, "%Y-%m-%d")
+        lo = datetime.strptime(data_start, "%Y-%m-%d")
+    except ValueError:
+        return []
+
+    def fmt(d: datetime) -> str:
+        return d.strftime("%Y-%m-%d")
+
+    # Week boundaries (Mon–Sun)
+    week_start = hi - timedelta(days=hi.weekday())
+    week_end   = week_start + timedelta(days=6)
+
+    # Month boundaries of the most recent data month
+    month_start = hi.replace(day=1)
+    if hi.month == 12:
+        month_end = hi.replace(year=hi.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        month_end = hi.replace(month=hi.month + 1, day=1) - timedelta(days=1)
+
+    # Previous calendar month
+    prev_month_end   = month_start - timedelta(days=1)
+    prev_month_start = prev_month_end.replace(day=1)
+
+    return [
+        {"label": "All Data",     "start": data_start,              "end": data_end},
+        {"label": "This Week",    "start": fmt(week_start),          "end": fmt(min(week_end, hi))},
+        {"label": "This Month",   "start": fmt(month_start),         "end": fmt(min(month_end, hi))},
+        {"label": "Last Month",   "start": fmt(prev_month_start),    "end": fmt(prev_month_end)},
+        {"label": "Last 4 Weeks", "start": fmt(hi - timedelta(27)),  "end": data_end},
+        {"label": "Last 8 Weeks", "start": fmt(hi - timedelta(55)),  "end": data_end},
+    ]
+
+
+def _date_label(start: str, end: str, active_preset: str) -> str:
+    """Human-readable range label for display in KPIs."""
+    try:
+        s = datetime.strptime(start, "%Y-%m-%d")
+        e = datetime.strptime(end,   "%Y-%m-%d")
+        weeks = max(1, round((e - s).days / 7))
+        s_fmt = s.strftime("%b %-d, %Y")
+        e_fmt = e.strftime("%b %-d, %Y")
+        return f"{s_fmt} – {e_fmt} · ~{weeks}w"
+    except ValueError:
+        return f"{start} – {end}"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -92,17 +150,27 @@ async def dashboard(request: Request):
 
 
 @app.get("/api/dashboard-data", response_class=HTMLResponse)
-async def dashboard_data(request: Request):
-    stats            = db.get_dashboard_stats()
-    capacity_data    = db.get_capacity_data()
-    projects         = db.get_projects_summary()
-    rev_by_emp       = db.get_revenue_by_employee()
-    rev_by_client    = db.get_revenue_by_client()
-    rev_by_service   = db.get_revenue_by_service()
-    weekly_trend     = db.get_weekly_revenue_trend()
+async def dashboard_data(
+    request: Request,
+    start: str = Query(default=""),
+    end:   str = Query(default=""),
+):
+    bounds          = db.get_date_bounds()
+    start, end      = _resolve_dates(start, end)
+    presets         = _build_presets(bounds["start"], bounds["end"])
+    active_preset   = next((p["label"] for p in presets
+                            if p["start"] == start and p["end"] == end), "Custom")
+    period_label    = _date_label(start, end, active_preset)
+
+    stats            = db.get_dashboard_stats(start, end)
+    capacity_data    = db.get_capacity_data(start, end)
+    projects         = db.get_projects_summary(start, end)
+    rev_by_emp       = db.get_revenue_by_employee(start, end)
+    rev_by_client    = db.get_revenue_by_client(start, end)
+    rev_by_service   = db.get_revenue_by_service(start, end)
+    weekly_trend     = db.get_weekly_revenue_trend(start, end)
     health           = db.compute_studio_health(stats, capacity_data, rev_by_service, rev_by_client)
 
-    # Derived KPIs
     blended_rate   = round(stats["total_revenue"] / stats["total_hours_logged"]) \
                      if stats["total_hours_logged"] else 0
     avg_utilization = round(
@@ -112,18 +180,26 @@ async def dashboard_data(request: Request):
 
     alert = ai.dashboard_alert(stats, capacity_data, projects, rev_by_client, rev_by_service)
     return templates.TemplateResponse("partials/dashboard_data.html", {
-        "request":         request,
-        "stats":           stats,
-        "health":          health,
-        "alert":           alert,
-        "weekly_trend":    weekly_trend,
-        "rev_by_emp":      rev_by_emp,
-        "rev_by_client":   rev_by_client[:10],
-        "rev_by_service":  rev_by_service,
-        "capacity_data":   capacity_data,
-        "projects":        active_projects,
-        "blended_rate":    blended_rate,
-        "avg_utilization": avg_utilization,
+        "request":        request,
+        "stats":          stats,
+        "health":         health,
+        "alert":          alert,
+        "weekly_trend":   weekly_trend,
+        "rev_by_emp":     rev_by_emp,
+        "rev_by_client":  rev_by_client[:10],
+        "rev_by_service": rev_by_service,
+        "capacity_data":  capacity_data,
+        "projects":       active_projects,
+        "blended_rate":   blended_rate,
+        "avg_utilization":avg_utilization,
+        # date-range context
+        "date_start":     start,
+        "date_end":       end,
+        "period_label":   period_label,
+        "active_preset":  active_preset,
+        "presets":        presets,
+        "api_url":        "/api/dashboard-data",
+        "content_id":     "dashboard-content",
     })
 
 
@@ -138,15 +214,34 @@ async def capacity_page(request: Request):
 
 
 @app.get("/api/capacity-data", response_class=HTMLResponse)
-async def capacity_data(request: Request):
-    capacity_data = db.get_capacity_data()
-    cap_trend     = db.get_weekly_capacity_pct()
+async def capacity_data(
+    request: Request,
+    start: str = Query(default=""),
+    end:   str = Query(default=""),
+):
+    bounds        = db.get_date_bounds()
+    start, end    = _resolve_dates(start, end)
+    presets       = _build_presets(bounds["start"], bounds["end"])
+    active_preset = next((p["label"] for p in presets
+                          if p["start"] == start and p["end"] == end), "Custom")
+    period_label  = _date_label(start, end, active_preset)
+
+    capacity_data = db.get_capacity_data(start, end)
+    cap_trend     = db.get_weekly_capacity_pct(start, end)
     insight       = ai.capacity_insight(capacity_data)
     return templates.TemplateResponse("partials/capacity_data.html", {
         "request":       request,
         "capacity_data": capacity_data,
         "cap_trend":     cap_trend,
         "insight":       insight,
+        # date-range context
+        "date_start":    start,
+        "date_end":      end,
+        "period_label":  period_label,
+        "active_preset": active_preset,
+        "presets":       presets,
+        "api_url":       "/api/capacity-data",
+        "content_id":    "capacity-content",
     })
 
 
