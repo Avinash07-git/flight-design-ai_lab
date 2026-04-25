@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Flight Design — Business Intelligence Hub</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .sidebar-link { @apply flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-all text-sm font-medium; }
+    .sidebar-link.active { @apply bg-indigo-600 text-white; }
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: flex; }
+    .htmx-request.htmx-indicator { display: flex; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 flex h-screen overflow-hidden font-sans">
+
+  <!-- Sidebar -->
+  <aside class="w-60 bg-slate-800 flex flex-col flex-shrink-0 h-full">
+    <div class="px-6 py-5 border-b border-slate-700">
+      <p class="text-xs text-slate-400 uppercase tracking-widest mb-1">Flight Design</p>
+      <h1 class="text-white font-bold text-base leading-tight">Business Intelligence Hub</h1>
+    </div>
+    <nav class="flex-1 px-3 py-4 flex flex-col gap-1">
+      <a href="/dashboard" class="sidebar-link {% if active == 'dashboard' %}active{% endif %}">
+        <span>🏠</span> Dashboard
+      </a>
+      <a href="/capacity" class="sidebar-link {% if active == 'capacity' %}active{% endif %}">
+        <span>📊</span> Capacity
+      </a>
+      <a href="/chat" class="sidebar-link {% if active == 'chat' %}active{% endif %}">
+        <span>💬</span> Ask Your Business
+      </a>
+      <a href="/actions" class="sidebar-link {% if active == 'actions' %}active{% endif %}">
+        <span>⚡</span> Smart Actions
+      </a>
+    </nav>
+    <div class="px-4 py-4 border-t border-slate-700">
+      <a href="/reset" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+        ↩ Upload new data
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+    <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between flex-shrink-0">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">{% block title %}Dashboard{% endblock %}</h2>
+        <p class="text-xs text-slate-400">Ariana Wolf · Oakland, CA</p>
+      </div>
+      <span class="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-3 py-1 rounded-full font-medium">
+        AI Powered ✦
+      </span>
+    </header>
+    <div class="flex-1 overflow-y-auto px-8 py-6">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+</body>
+</html>

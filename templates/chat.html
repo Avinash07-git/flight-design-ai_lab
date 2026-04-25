@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% set active = "chat" %}
+{% block title %}Ask Your Business{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-full max-w-2xl mx-auto" style="height: calc(100vh - 160px);">
+
+  <!-- Intro -->
+  <div class="bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4 mb-5 flex gap-3 items-start">
+    <span class="text-xl">💬</span>
+    <p class="text-sm text-slate-600 leading-relaxed">
+      Ask anything about your business — budgets, overdue payments, capacity, clients.
+      The AI reads <strong>your uploaded data</strong> and answers in plain English.
+    </p>
+  </div>
+
+  <!-- Suggested questions -->
+  <div class="flex flex-wrap gap-2 mb-5" id="suggestions">
+    {% set qs = [
+      "Which projects are over budget?",
+      "Who hasn't paid me yet?",
+      "Which contracts are still unsigned?",
+      "What's my total revenue this month?",
+      "Am I overbooked next week?",
+    ] %}
+    {% for q in qs %}
+    <button
+      class="text-xs bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-600 px-3 py-1.5 rounded-full transition-colors"
+      onclick="document.getElementById('chat-input').value = this.innerText; document.getElementById('chat-form').dispatchEvent(new Event('submit', {bubbles:true}))">
+      {{ q }}
+    </button>
+    {% endfor %}
+  </div>
+
+  <!-- Chat history -->
+  <div id="chat-history" class="flex-1 overflow-y-auto space-y-4 pb-4">
+    <div class="text-center text-slate-300 text-sm py-8">Ask your first question ↓</div>
+  </div>
+
+  <!-- Input -->
+  <form id="chat-form"
+    hx-post="/api/chat"
+    hx-target="#chat-history"
+    hx-swap="beforeend"
+    hx-on::after-request="this.reset(); document.getElementById('chat-history').scrollTop = 999999"
+    class="flex gap-3 pt-4 border-t border-slate-200 mt-4">
+    <input id="chat-input" name="question" type="text" required
+      placeholder="e.g. Which client owes me money?"
+      class="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+    <button type="submit"
+      class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-xl text-sm font-semibold transition-colors">
+      Ask →
+    </button>
+  </form>
+
+</div>
+{% endblock %}

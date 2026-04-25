@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Flight Design — Get Started</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 min-h-screen flex items-center justify-center p-6">
+  <div class="w-full max-w-lg">
+
+    <!-- Logo / Brand -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl mb-4">
+        <span class="text-3xl">✈️</span>
+      </div>
+      <h1 class="text-white text-2xl font-bold">Flight Design</h1>
+      <p class="text-slate-400 text-sm mt-1">Business Intelligence Hub</p>
+    </div>
+
+    <div class="bg-slate-800 rounded-2xl p-8 shadow-2xl">
+      <h2 class="text-white font-semibold text-lg mb-1">Connect Your Business</h2>
+      <p class="text-slate-400 text-sm mb-6">
+        Upload exports from your tools, or use our demo data to explore instantly.
+      </p>
+
+      <!-- Demo shortcut -->
+      <form action="/load-demo" method="post" class="mb-6">
+        <button type="submit"
+          class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors text-sm">
+          ⚡ Use Demo Data — Explore instantly
+        </button>
+      </form>
+
+      <div class="flex items-center gap-3 mb-6">
+        <div class="flex-1 h-px bg-slate-700"></div>
+        <span class="text-slate-500 text-xs">or upload your own CSVs</span>
+        <div class="flex-1 h-px bg-slate-700"></div>
+      </div>
+
+      <!-- CSV Upload form -->
+      <form action="/upload" method="post" enctype="multipart/form-data" class="space-y-3">
+        {% set uploads = [
+          ("projects", "📁 Projects CSV", "Airtable export"),
+          ("time_entries", "⏱ Time Entries CSV", "Harvest export"),
+          ("invoices", "🧾 Invoices CSV", "QuickBooks export"),
+          ("contracts", "📝 Contracts CSV", "Dropbox Sign export"),
+          ("calendar", "📅 Calendar CSV", "Google Calendar export"),
+        ] %}
+        {% for name, label, hint in uploads %}
+        <div class="flex items-center justify-between bg-slate-700/50 rounded-xl px-4 py-3">
+          <div>
+            <p class="text-white text-sm font-medium">{{ label }}</p>
+            <p class="text-slate-500 text-xs">{{ hint }}</p>
+          </div>
+          <label class="cursor-pointer">
+            <span class="text-xs bg-slate-600 hover:bg-slate-500 text-slate-200 px-3 py-1.5 rounded-lg transition-colors font-medium">
+              Choose file
+            </span>
+            <input type="file" name="{{ name }}" accept=".csv" class="hidden"/>
+          </label>
+        </div>
+        {% endfor %}
+
+        <button type="submit"
+          class="w-full mt-2 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors text-sm">
+          Upload & Analyse →
+        </button>
+      </form>
+
+      <p class="text-center text-slate-600 text-xs mt-5">
+        Any missing files will be filled with demo data automatically.
+      </p>
+    </div>
+
+    <p class="text-center text-slate-600 text-xs mt-6">
+      Works with any design studio · No setup required · Under 5 minutes
+    </p>
+  </div>
+</body>
+</html>

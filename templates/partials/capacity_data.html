@@ -1,0 +1,92 @@
+<!-- AI Insight -->
+<div class="bg-indigo-50 border border-indigo-200 rounded-xl px-6 py-4 flex gap-4 items-start">
+  <span class="text-2xl mt-0.5">🤖</span>
+  <div>
+    <p class="text-xs font-semibold text-indigo-500 uppercase tracking-wide mb-1">AI Capacity Insight</p>
+    <p class="text-slate-700 text-sm leading-relaxed">{{ insight }}</p>
+  </div>
+</div>
+
+<!-- Chart -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+  <h3 class="font-semibold text-slate-700 text-sm mb-5">Hours — Estimated vs Logged per Project</h3>
+  <div style="height: 280px; position: relative;">
+    <canvas id="capacityChart"></canvas>
+  </div>
+</div>
+
+<!-- Project Breakdown -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-100">
+    <h3 class="font-semibold text-slate-700 text-sm">Active Project Breakdown</h3>
+  </div>
+  <div class="divide-y divide-slate-50">
+    {% for p in projects %}
+    {% set pct = ((p.logged_hours / p.estimated_hours) * 100) | int if p.estimated_hours > 0 else 0 %}
+    {% set over = p.logged_hours > p.estimated_hours %}
+    <div class="px-6 py-4">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-sm font-medium text-slate-700">{{ p.name }}</span>
+        <span class="text-xs {% if over %}text-red-500 font-semibold{% else %}text-slate-400{% endif %}">
+          {{ p.logged_hours|int }}h / {{ p.estimated_hours|int }}h
+          {% if over %}⚠️ Over{% endif %}
+        </span>
+      </div>
+      <div class="w-full bg-slate-100 rounded-full h-2">
+        <div class="h-2 rounded-full {% if over %}bg-red-400{% elif pct > 80 %}bg-amber-400{% else %}bg-indigo-400{% endif %}"
+             style="width: {{ [pct, 100] | min }}%"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Upcoming Calendar -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-100">
+    <h3 class="font-semibold text-slate-700 text-sm">Upcoming Calendar</h3>
+  </div>
+  <div class="divide-y divide-slate-50">
+    {% for ev in calendar %}
+    <div class="px-6 py-3 flex items-center justify-between">
+      <div>
+        <p class="text-sm font-medium text-slate-700">{{ ev.title }}</p>
+        <p class="text-xs text-slate-400">{{ ev.date }} at {{ ev.start_time }}</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-slate-400">{{ ev.duration_hours }}h</span>
+        <span class="text-xs px-2 py-1 rounded-full
+          {% if ev.type == 'Client Call' %}bg-blue-100 text-blue-600
+          {% elif ev.type == 'Workshop' %}bg-purple-100 text-purple-600
+          {% else %}bg-slate-100 text-slate-500{% endif %}
+          font-medium">{{ ev.type }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+(function() {
+  const labels = {{ projects | map(attribute='name') | list | tojson }};
+  const estimated = {{ projects | map(attribute='estimated_hours') | list | tojson }};
+  const logged = {{ projects | map(attribute='logged_hours') | list | tojson }};
+
+  new Chart(document.getElementById('capacityChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Estimated Hours', data: estimated, backgroundColor: '#e0e7ff', borderRadius: 4 },
+        { label: 'Logged Hours', data: logged, backgroundColor: '#6366f1', borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: { y: { beginAtZero: true, title: { display: true, text: 'Hours' } } }
+    }
+  });
+})();
+</script>

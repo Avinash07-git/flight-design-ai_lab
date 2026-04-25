@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% set active = "dashboard" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div
+  hx-get="/api/dashboard-data"
+  hx-trigger="load"
+  hx-swap="innerHTML"
+  class="space-y-6">
+
+  <!-- Loading skeleton -->
+  <div class="htmx-indicator flex items-center gap-2 text-slate-400 text-sm">
+    <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+    </svg>
+    Loading your business data…
+  </div>
+
+  <!-- Skeleton cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    {% for _ in range(4) %}
+    <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100 animate-pulse">
+      <div class="h-3 bg-slate-200 rounded w-2/3 mb-3"></div>
+      <div class="h-7 bg-slate-200 rounded w-1/3"></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

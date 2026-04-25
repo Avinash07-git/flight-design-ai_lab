@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% set active = "actions" %}
+{% block title %}Smart Actions{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <div class="bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4 flex gap-3 items-start">
+    <span class="text-xl">⚡</span>
+    <p class="text-sm text-slate-600 leading-relaxed">
+      Click any action below. The AI reads your data and generates ready-to-use text.
+      <strong>Copy it into QuickBooks, Gmail, or wherever you need it.</strong>
+    </p>
+  </div>
+
+  <!-- Weekly Briefing -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">📅 Weekly Briefing</h3>
+        <p class="text-xs text-slate-400 mt-0.5">AI summary of your week — priorities, money, risks</p>
+      </div>
+      <button
+        hx-post="/api/action/briefing"
+        hx-target="#result-briefing"
+        hx-swap="innerHTML"
+        hx-indicator="#spin-briefing"
+        class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+        <span id="spin-briefing" class="htmx-indicator animate-spin">⏳</span>
+        Generate →
+      </button>
+    </div>
+    <div id="result-briefing"></div>
+  </div>
+
+  <!-- Invoice Drafts -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+    <div>
+      <h3 class="font-semibold text-slate-800">🧾 Draft Invoice Description</h3>
+      <p class="text-xs text-slate-400 mt-0.5">AI writes the invoice description from your time entries — ready to paste into QuickBooks</p>
+    </div>
+    {% for p in active_projects %}
+    <div class="border-t border-slate-50 pt-4 first:border-0 first:pt-0">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <p class="text-sm font-medium text-slate-700">{{ p.name }}</p>
+          <p class="text-xs text-slate-400">{{ p.client }} · {{ p.logged_hours|int }}h logged</p>
+        </div>
+        <form hx-post="/api/action/invoice"
+              hx-target="#result-invoice-{{ p.id }}"
+              hx-swap="innerHTML"
+              hx-indicator="#spin-inv-{{ p.id }}">
+          <input type="hidden" name="project_id" value="{{ p.id }}"/>
+          <button type="submit"
+            class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors flex items-center gap-1">
+            <span id="spin-inv-{{ p.id }}" class="htmx-indicator animate-spin text-xs">⏳</span>
+            Draft →
+          </button>
+        </form>
+      </div>
+      <div id="result-invoic{{ p.id }}"></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Contract Follow-ups -->
+  {% if pending_contracts %}
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+    <div>
+      <h3 class="font-semibold text-slate-800">✉️ Chase Unsigned Contracts</h3>
+      <p class="text-xs text-slate-400 mt-0.5">AI writes a warm follow-up email — ready to paste into Gmail</p>
+    </div>
+    {% for c in pending_contracts %}
+    <div class="border-t border-slate-50 pt-4 first:border-0 first:pt-0">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <p class="text-sm font-medium text-slate-700">{{ c.client }}</p>
+          <p class="text-xs text-slate-400">{{ c.project }} · Sent {{ c.sent_date }}</p>
+        </div>
+        <form hx-post="/api/action/followup"
+              hx-target="#result-contract-{{ c.id }}"
+              hx-swap="innerHTML"
+              hx-indicator="#spin-con-{{ c.id }}">
+          <input type="hidden" name="contract_id" value="{{ c.id }}"/>
+          <button type="submit"
+            class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors flex items-center gap-1">
+            <span id="spin-con-{{ c.id }}" class="htmx-indicator animate-spin text-xs">⏳</span>
+            Write Email →
+          </button>
+        </form>
+      </div>
+      <div id="result-contract-{{ c.id }}"></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
