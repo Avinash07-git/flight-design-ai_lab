@@ -5,74 +5,173 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Flight Design — Get Started</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    /* Mesh overlay */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 20%, rgba(99,102,241,0.15) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(139,92,246,0.12) 0%, transparent 60%);
+    }
+    .glass-card {
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 24px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.4);
+    }
+    .upload-row {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px; padding: 14px 18px;
+      display: flex; align-items: center; justify-content: space-between;
+      transition: all 0.2s;
+    }
+    .upload-row:hover { background: rgba(255,255,255,0.08); border-color: rgba(99,102,241,0.4); }
+    .file-btn {
+      font-size: 11px; font-weight: 600; padding: 7px 14px;
+      border-radius: 8px; cursor: pointer; transition: all 0.2s;
+      background: rgba(99,102,241,0.2); color: #a5b4fc;
+      border: 1px solid rgba(99,102,241,0.3);
+    }
+    .file-btn:hover { background: rgba(99,102,241,0.35); color: #c7d2fe; }
+    .btn-primary {
+      width: 100%; padding: 14px; border-radius: 14px; border: none; cursor: pointer;
+      font-size: 15px; font-weight: 700; transition: all 0.2s;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white; box-shadow: 0 8px 25px rgba(99,102,241,0.4);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(99,102,241,0.5); }
+    .btn-secondary {
+      width: 100%; padding: 12px; border-radius: 14px; border: none; cursor: pointer;
+      font-size: 13px; font-weight: 600; transition: all 0.2s;
+      background: rgba(255,255,255,0.06); color: #94a3b8;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); color: #cbd5e1; }
+    .divider { display: flex; align-items: center; gap: 12px; }
+    .divider::before, .divider::after {
+      content:''; flex:1; height:1px; background:rgba(255,255,255,0.08);
+    }
+    .stat-pill {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 10px 14px;
+    }
+  </style>
 </head>
-<body class="bg-slate-900 min-h-screen flex items-center justify-center p-6">
-  <div class="w-full max-w-lg">
+<body>
+  <div style="width:100%;max-width:460px;position:relative;z-index:1">
 
-    <!-- Brand -->
-    <div class="text-center mb-8">
-      <div class="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl mb-4">
-        <span class="text-3xl">✈️</span>
+    <!-- Logo -->
+    <div style="text-align:center;margin-bottom:32px">
+      <div style="display:inline-flex;align-items:center;justify-content:center;
+                  width:64px;height:64px;border-radius:18px;margin-bottom:16px;
+                  background:linear-gradient(135deg,#6366f1,#8b5cf6);
+                  box-shadow:0 8px 30px rgba(99,102,241,0.5);font-size:28px">
+        ✈️
       </div>
-      <h1 class="text-white text-2xl font-bold">Flight Design</h1>
-      <p class="text-slate-400 text-sm mt-1">Business Intelligence Hub</p>
+      <h1 style="color:#f1f5f9;font-size:1.6rem;font-weight:800;margin:0">Flight Design</h1>
+      <p style="color:#64748b;font-size:13px;margin:6px 0 0">Business Intelligence Hub</p>
     </div>
 
-    <div class="bg-slate-800 rounded-2xl p-8 shadow-2xl">
-      <h2 class="text-white font-semibold text-lg mb-1">Connect Your Business</h2>
-      <p class="text-slate-400 text-sm mb-6">
-        Upload your studio data files, or use the live demo data to explore instantly.
+    <!-- Card -->
+    <div class="glass-card" style="padding:36px">
+
+      <h2 style="color:#f1f5f9;font-size:1.1rem;font-weight:700;margin:0 0 6px">
+        Connect Your Studio
+      </h2>
+      <p style="color:#64748b;font-size:13px;margin:0 0 24px;line-height:1.6">
+        Upload your data files, or jump straight in with live demo data to explore all features.
       </p>
 
-      <!-- Demo button -->
-      <form action="/load-demo" method="post" class="mb-6">
-        <button type="submit"
-          class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors text-sm">
-          ⚡ Use Demo Data — Explore instantly
+      <!-- Demo Button -->
+      <form action="/load-demo" method="post" style="margin-bottom:24px">
+        <button type="submit" class="btn-primary">
+          ⚡ &nbsp;Use Live Demo Data — Explore instantly
         </button>
       </form>
 
-      <div class="flex items-center gap-3 mb-6">
-        <div class="flex-1 h-px bg-slate-700"></div>
-        <span class="text-slate-500 text-xs">or upload your own CSVs</span>
-        <div class="flex-1 h-px bg-slate-700"></div>
+      <!-- Stats strip -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:24px">
+        <div class="stat-pill">
+          <span style="font-size:16px">👥</span>
+          <div>
+            <p style="color:#f1f5f9;font-size:11px;font-weight:700;margin:0">8</p>
+            <p style="color:#64748b;font-size:10px;margin:0">Team</p>
+          </div>
+        </div>
+        <div class="stat-pill">
+          <span style="font-size:16px">📁</span>
+          <div>
+            <p style="color:#f1f5f9;font-size:11px;font-weight:700;margin:0">59</p>
+            <p style="color:#64748b;font-size:10px;margin:0">Projects</p>
+          </div>
+        </div>
+        <div class="stat-pill">
+          <span style="font-size:16px">💰</span>
+          <div>
+            <p style="color:#f1f5f9;font-size:11px;font-weight:700;margin:0">$693K</p>
+            <p style="color:#64748b;font-size:10px;margin:0">Billed</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div class="divider" style="margin-bottom:24px">
+        <span style="color:#475569;font-size:11px;font-weight:500">or upload your own CSVs</span>
       </div>
 
       <!-- Upload form -->
-      <form action="/upload" method="post" enctype="multipart/form-data" class="space-y-3">
-        {% set uploads = [
-          ("employees", "👥 Employee List", "Name · Employee Type · Bill Rate · Capacity"),
-          ("projects",  "📁 Project File",  "Project · Client · Service · Hours Budget · Budget"),
-          ("schedule",  "📅 Schedule File", "Employee · Client · Project · Dates · Hours · Amount"),
-        ] %}
-        {% for name, label, hint in uploads %}
-        <div class="flex items-center justify-between bg-slate-700/50 rounded-xl px-4 py-3">
-          <div>
-            <p class="text-white text-sm font-medium">{{ label }}</p>
-            <p class="text-slate-500 text-xs">{{ hint }}</p>
-          </div>
-          <label class="cursor-pointer">
-            <span class="text-xs bg-slate-600 hover:bg-slate-500 text-slate-200 px-3 py-1.5 rounded-lg transition-colors font-medium">
-              Choose file
-            </span>
-            <input type="file" name="{{ name }}" accept=".csv" class="hidden"/>
-          </label>
-        </div>
-        {% endfor %}
+      <form action="/upload" method="post" enctype="multipart/form-data">
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
 
-        <button type="submit"
-          class="w-full mt-2 bg-slate-600 hover:bg-slate-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors text-sm">
-          Upload & Analyse →
+          {% set uploads = [
+            ("employees", "👥", "Employee List",  "Name · Bill Rate · Capacity %"),
+            ("projects",  "📁", "Project File",   "Client · Service · Hours Budget"),
+            ("schedule",  "📅", "Schedule File",  "Employee · Dates · Hours · Amount"),
+          ] %}
+          {% for name, icon, label, hint in uploads %}
+          <div class="upload-row" id="row-{{ name }}">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:18px">{{ icon }}</span>
+              <div>
+                <p style="color:#e2e8f0;font-size:13px;font-weight:600;margin:0">{{ label }}</p>
+                <p style="color:#475569;font-size:11px;margin:0">{{ hint }}</p>
+              </div>
+            </div>
+            <label style="cursor:pointer">
+              <span class="file-btn" id="lbl-{{ name }}">Choose file</span>
+              <input type="file" name="{{ name }}" accept=".csv" class="hidden"
+                     onchange="document.getElementById('lbl-{{ name }}').innerText = this.files[0]?.name || 'Choose file';
+                               document.getElementById('lbl-{{ name }}').style.color='#86efac';
+                               document.getElementById('lbl-{{ name }}').style.borderColor='rgba(134,239,172,0.4)'"/>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+
+        <button type="submit" class="btn-secondary">
+          Upload &amp; Analyse →
         </button>
       </form>
 
-      <p class="text-center text-slate-600 text-xs mt-5">
+      <p style="text-align:center;color:#334155;font-size:11px;margin:16px 0 0">
         Missing files are filled with demo data automatically.
       </p>
     </div>
 
-    <p class="text-center text-slate-600 text-xs mt-6">
-      Works with any design studio · No setup required · Under 5 minutes
+    <p style="text-align:center;color:#334155;font-size:11px;margin-top:20px">
+      Powered by Gemini AI · No setup · Under 5 minutes
     </p>
   </div>
 </body>

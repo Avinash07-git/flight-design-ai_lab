@@ -1,75 +1,144 @@
+<style>
+  .emp-card {
+    background: white; border-radius: 16px; padding: 20px;
+    border: 1px solid #e2e8f0; transition: all 0.2s;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+  }
+  .emp-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+  .emp-card.over { border-color: #fecaca; background: linear-gradient(to bottom right, #fff, #fff9f9); }
+  .emp-card.ok   { border-color: #bbf7d0; background: linear-gradient(to bottom right, #fff, #f9fffc); }
+
+  .metric-box { text-align:center; background:#f8fafc; border-radius:10px; padding:10px 8px; }
+  .metric-box .mval { font-size:15px; font-weight:800; color:#0f172a; }
+  .metric-box .msub { font-size:10px; color:#94a3b8; margin-top:2px; }
+
+  .cap-bar { height:8px; border-radius:6px; background:#e2e8f0; overflow:hidden; margin-top:6px; }
+  .cap-fill { height:100%; border-radius:6px; transition: width 0.5s ease; }
+
+  .tag { display:inline-flex; align-items:center; padding:3px 10px;
+    border-radius:20px; font-size:10px; font-weight:700; }
+
+  .ai-insight-cap {
+    border-radius: 16px; padding: 20px 24px;
+    background: linear-gradient(135deg, #1e1b4b, #312e81, #1e1b4b);
+    border: 1px solid rgba(167,139,250,0.2);
+    box-shadow: 0 6px 28px rgba(79,70,229,0.25);
+    margin-bottom: 24px; position: relative; overflow: hidden;
+  }
+  .ai-insight-cap::before {
+    content:''; position:absolute; top:-50px; right:-50px;
+    width:180px; height:180px; border-radius:50%;
+    background: rgba(139,92,246,0.1);
+  }
+</style>
+
 <!-- AI Insight -->
-<div class="bg-indigo-50 border border-indigo-200 rounded-xl px-6 py-4 flex gap-4 items-start">
-  <span class="text-2xl mt-0.5">🤖</span>
-  <div>
-    <p class="text-xs font-semibold text-indigo-500 uppercase tracking-wide mb-1">AI Capacity Insight</p>
-    <p class="text-slate-700 text-sm leading-relaxed">{{ insight }}</p>
+<div class="ai-insight-cap">
+  <div style="position:relative;z-index:1;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:44px;height:44px;border-radius:12px;flex-shrink:0;
+                background:rgba(139,92,246,0.25);border:1px solid rgba(167,139,250,0.3);
+                display:flex;align-items:center;justify-content:center;font-size:22px">🤖</div>
+    <div>
+      <p style="font-size:10px;font-weight:700;color:#a78bfa;letter-spacing:0.1em;
+                text-transform:uppercase;margin:0 0 6px">✦ AI Capacity Analysis</p>
+      <p style="font-size:13px;color:#e2e8f0;line-height:1.7;margin:0">{{ insight }}</p>
+    </div>
   </div>
 </div>
 
-<!-- Chart: Allowed vs Avg Weekly Hours -->
-<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-  <h3 class="font-semibold text-slate-700 text-sm mb-5">
-    Weekly Capacity: Contracted vs Average Actual Hours
-  </h3>
-  <div style="height: 300px; position: relative;">
+<!-- Chart card -->
+<div class="glass-card" style="padding:24px;margin-bottom:24px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <div>
+      <h3 style="font-size:14px;font-weight:700;color:#0f172a;margin:0">
+        Contracted vs Actual Average Weekly Hours
+      </h3>
+      <p style="font-size:11px;color:#94a3b8;margin:4px 0 0">
+        Red bars = average exceeds contracted capacity
+      </p>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center">
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:10px;height:10px;border-radius:3px;background:#e2e8f0"></div>
+        <span style="font-size:11px;color:#64748b">Contracted</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:10px;height:10px;border-radius:3px;background:#6366f1"></div>
+        <span style="font-size:11px;color:#64748b">Avg Actual</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:10px;height:10px;border-radius:3px;background:#f87171"></div>
+        <span style="font-size:11px;color:#64748b">Over Capacity</span>
+      </div>
+    </div>
+  </div>
+  <div style="height:280px;position:relative">
     <canvas id="capacityChart"></canvas>
   </div>
 </div>
 
-<!-- Employee Cards -->
-<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Employee Cards Grid -->
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
   {% for e in capacity_data %}
-  {% set pct_capped = [e.utilization_pct, 100] | min %}
-  <div class="bg-white rounded-xl shadow-sm border {% if e.over_capacity %}border-red-200{% else %}border-slate-100{% endif %} p-5">
-    <div class="flex items-start justify-between mb-3">
-      <div>
-        <p class="font-semibold text-slate-800 text-sm">{{ e.name }}</p>
-        <p class="text-xs text-slate-400 mt-0.5">{{ e.employee_type }} · ${{ e.bill_rate | int }}/hr</p>
+  <div class="emp-card {% if e.over_capacity %}over{% else %}ok{% endif %}">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:40px;height:40px;border-radius:12px;flex-shrink:0;
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:14px;font-weight:800;color:white;
+                    background:{% if e.over_capacity %}linear-gradient(135deg,#f87171,#ef4444){% else %}linear-gradient(135deg,#6366f1,#8b5cf6){% endif %}">
+          {{ e.name[0] }}
+        </div>
+        <div>
+          <p style="font-size:13px;font-weight:700;color:#0f172a;margin:0">{{ e.name }}</p>
+          <p style="font-size:10px;color:#94a3b8;margin:2px 0 0">${{ e.bill_rate | int }}/hr</p>
+        </div>
       </div>
-      <div class="text-right">
-        <span class="text-xs px-2 py-1 rounded-full font-medium
-          {% if e.over_capacity %}bg-red-100 text-red-600{% else %}bg-green-100 text-green-700{% endif %}">
-          {% if e.over_capacity %}⚠️ Over Capacity{% else %}✅ Within Capacity{% endif %}
-        </span>
+      <span class="tag {% if e.employee_type == 'Core Staff' %}
+                   " style="background:#ede9fe;color:#7c3aed"
+              {% else %}
+                   " style="background:#f1f5f9;color:#64748b"
+              {% endif %}>
+        {{ e.employee_type }}
+      </span>
+    </div>
+
+    <!-- 3 Metric boxes -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+      <div class="metric-box">
+        <div class="mval">{{ e.capacity_pct }}%</div>
+        <div class="msub">Contracted</div>
+        <div class="msub" style="color:#6366f1;font-weight:600">{{ e.allowed_hours_week }}h/wk</div>
+      </div>
+      <div class="metric-box">
+        <div class="mval" style="color:{% if e.over_capacity %}#dc2626{% else %}#0f172a{% endif %}">
+          {{ e.avg_weekly_hours }}h
+        </div>
+        <div class="msub">Avg Actual</div>
+        <div class="msub">per week</div>
+      </div>
+      <div class="metric-box">
+        <div class="mval" style="color:{% if e.violation_weeks > 0 %}#f59e0b{% else %}#16a34a{% endif %}">
+          {{ e.violation_weeks }}
+        </div>
+        <div class="msub">Over-cap</div>
+        <div class="msub">of {{ e.total_weeks }} wks</div>
       </div>
     </div>
 
-    <!-- Key metrics row -->
-    <div class="grid grid-cols-3 gap-3 mb-3 text-center">
-      <div class="bg-slate-50 rounded-lg py-2">
-        <p class="text-xs text-slate-400 mb-0.5">Contracted</p>
-        <p class="text-sm font-bold text-slate-700">{{ e.capacity_pct }}%</p>
-        <p class="text-xs text-slate-500">{{ e.allowed_hours_week }}h/wk</p>
-      </div>
-      <div class="bg-slate-50 rounded-lg py-2">
-        <p class="text-xs text-slate-400 mb-0.5">Avg Actual</p>
-        <p class="text-sm font-bold {% if e.over_capacity %}text-red-500{% else %}text-slate-700{% endif %}">
-          {{ e.avg_weekly_hours }}h/wk
-        </p>
-        <p class="text-xs text-slate-500">{{ e.total_hours | int }}h total</p>
-      </div>
-      <div class="bg-slate-50 rounded-lg py-2">
-        <p class="text-xs text-slate-400 mb-0.5">Overages</p>
-        <p class="text-sm font-bold {% if e.violation_weeks > 0 %}text-orange-500{% else %}text-slate-700{% endif %}">
-          {{ e.violation_weeks }} wks
-        </p>
-        <p class="text-xs text-slate-500">of {{ e.total_weeks }}</p>
-      </div>
+    <!-- Status badge + bar -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span class="tag" style="{% if e.over_capacity %}background:#fef2f2;color:#dc2626{% else %}background:#f0fdf4;color:#16a34a{% endif %}">
+        {% if e.over_capacity %}⚠️ {{ e.utilization_pct }}% utilisation{% else %}✓ Within capacity{% endif %}
+      </span>
+      <span style="font-size:11px;color:#94a3b8">{{ e.total_hours | int }}h total</span>
     </div>
-
-    <!-- Utilisation bar -->
-    <div>
-      <div class="flex justify-between text-xs text-slate-400 mb-1">
-        <span>Utilisation</span>
-        <span>{{ e.utilization_pct }}%</span>
-      </div>
-      <div class="w-full bg-slate-100 rounded-full h-2">
-        <div class="h-2 rounded-full
-          {% if e.over_capacity %}bg-red-400
-          {% elif e.utilization_pct > 80 %}bg-amber-400
-          {% else %}bg-indigo-400{% endif %}"
-             style="width: {{ pct_capped }}%"></div>
+    <div class="cap-bar">
+      <div class="cap-fill"
+           style="width:{{ [e.utilization_pct,100]|min }}%;
+                  background:{% if e.over_capacity %}linear-gradient(90deg,#f87171,#ef4444){% elif e.utilization_pct > 80 %}linear-gradient(90deg,#fbbf24,#f59e0b){% else %}linear-gradient(90deg,#6366f1,#8b5cf6){% endif %}">
       </div>
     </div>
   </div>
@@ -78,12 +147,15 @@
 
 <script>
 (function() {
-  const labels   = {{ capacity_data | map(attribute='name') | list | tojson }};
-  const allowed  = {{ capacity_data | map(attribute='allowed_hours_week') | list | tojson }};
-  const actual   = {{ capacity_data | map(attribute='avg_weekly_hours') | list | tojson }};
+  const labels  = {{ capacity_data | map(attribute='name') | list | tojson }};
+  const allowed = {{ capacity_data | map(attribute='allowed_hours_week') | list | tojson }};
+  const actual  = {{ capacity_data | map(attribute='avg_weekly_hours') | list | tojson }};
 
   const barColors = actual.map((a, i) =>
-    a > allowed[i] ? 'rgba(248,113,113,0.85)' : 'rgba(99,102,241,0.85)'
+    a > allowed[i] ? 'rgba(248,113,113,0.9)' : 'rgba(99,102,241,0.85)'
+  );
+  const barBorders = actual.map((a, i) =>
+    a > allowed[i] ? '#ef4444' : '#6366f1'
   );
 
   new Chart(document.getElementById('capacityChart'), {
@@ -92,28 +164,47 @@
       labels,
       datasets: [
         {
-          label: 'Contracted Hours / Week',
+          label: 'Contracted hrs/wk',
           data: allowed,
-          backgroundColor: 'rgba(226,232,240,0.9)',
-          borderRadius: 4,
+          backgroundColor: 'rgba(226,232,240,0.8)',
+          borderColor: '#cbd5e1',
+          borderWidth: 1,
+          borderRadius: 6,
         },
         {
-          label: 'Avg Actual Hours / Week',
+          label: 'Avg actual hrs/wk',
           data: actual,
           backgroundColor: barColors,
-          borderRadius: 4,
-        },
+          borderColor: barBorders,
+          borderWidth: 1,
+          borderRadius: 6,
+        }
       ]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: 'top' } },
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            afterLabel: (ctx) => {
+              if (ctx.datasetIndex === 1) {
+                const cap = allowed[ctx.dataIndex];
+                const act = ctx.parsed.y;
+                const pct = Math.round((act/cap)*100);
+                return `${pct}% of contracted capacity`;
+              }
+            }
+          }
+        }
+      },
       scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
         y: {
-          beginAtZero: true,
-          title: { display: true, text: 'Hours / Week' },
-          max: 45,
+          beginAtZero: true, max: 45,
+          title: { display: true, text: 'Hours / Week', font: { size: 11 } },
+          grid: { color: '#f1f5f9' },
+          ticks: { font: { size: 11 } }
         }
       }
     }
