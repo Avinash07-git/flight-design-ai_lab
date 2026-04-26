@@ -278,39 +278,39 @@ def project_risk_analysis(
 
     prompt = f"""
 You are a sharp business advisor for Flight Design (Ariana Wolf, Oakland CA).
-Analyse the project risk and staff availability data, then give a concrete, actionable recommendation.
+Analyse the project risk and staff data below, then give a concrete, actionable recommendation.
 
-⚠️  CRITICAL RULE — read this carefully before responding:
-- If a project risk is "OVER" (burn_pct > 100), that means the hours budget is ALREADY BLOWN.
-  DO NOT recommend assigning more staff hours to it. Adding more hours makes the financial hole DEEPER.
-  The correct action for OVER projects is:
-    1. Pause logging time against it immediately.
-    2. Flag it for a client budget-amendment conversation (the budget_overrun_email action handles this).
-    3. If any staff are currently assigned, consider pulling them OFF until the client approves more budget.
-- Only recommend ASSIGNING more staff when risk is "AT_RISK" (80\u201399% burned) and there is still
-  remaining budget to spend. In that case, name who can help and how many hours they can contribute
-  within the remaining budget.
-- Always flag overloaded staff (free_h < 0) — Ariana should pull work FROM them, not give them more.
-- Note how many projects each person is already on. Someone on 5+ projects may be over-extended
-  in terms of context-switching even if they have a few free hours numerically.
+—— RULES (follow these exactly) ——
+
+For OVER projects (burn_pct > 100, budget already blown):
+  • Do NOT suggest logging more hours or assigning anyone new — it just deepens the financial hole.
+  • Tell Ariana to pause time logging on this project immediately.
+  • Tell her to use the “Budget Overrun Client Emails” action (right below on this page) to draft
+    a professional budget-amendment email to the client.
+
+For AT_RISK projects (burn_pct 80–99, still has remaining hours):
+  • Suggest assigning someone — but ALWAYS pick the person with the highest free_h first
+    (the staff list is already sorted: most-available at the top).
+  • If two people have similar free_h, prefer the one with FEWER current projects —
+    fewer projects = less context-switching = better quality output.
+  • Never recommend someone with 5+ current projects if a less-loaded option exists.
+  • State exactly: name, how many free hours they have, and how many projects they’re currently on.
+
+For overloaded staff (free_h < 0):
+  • Name them and say Ariana should pull work FROM them this week, not add to them.
 
 WEEK: {week_ref}
 
 AT-RISK / OVER-BUDGET PROJECTS:
 {at_risk_json}
 
-STAFF WITH FREE CAPACITY THIS WEEK:
+STAFF (sorted by free_h descending — most available first):
 {available_json}
 
-OVERLOADED STAFF (already over contracted hours — do NOT add work):
+OVERLOADED STAFF (free_h < 0 — pull work from these people):
 {overloaded_json}
 
-Write 3–4 sentences:
-1. Name any OVER-budget projects and be explicit: the budget is blown, do NOT add more hours, flag for client conversation.
-2. Name any AT_RISK projects and who (if anyone) should be assigned to complete them within the remaining budget.
-3. Name overloaded staff and recommend pulling work FROM them.
-4. If someone has many projects already (5+), flag the context-switching risk even if they have free hours.
-Be direct. Use real names and numbers. No bullet points.
+Write 3–4 punchy sentences. Real names and numbers. No bullet points in the answer.
 """
     return ask(prompt, fallback=fallback)
 

@@ -740,6 +740,6 @@ def get_staff_week_availability() -> list[dict]:
             "week_end":         week_sun,
         })
 
-    # Most-available first
-    result.sort(key=lambda x: x["free_h"], reverse=True)
+    # Most-available first; tiebreak by fewest active projects (less context-switching)
+    result.sort(key=lambda x: (-x["free_h"], len(x["current_projects"])))
     return result
