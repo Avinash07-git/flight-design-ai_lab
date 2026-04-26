@@ -1,4 +1,4 @@
-# ✈️ Flight Design — Business Intelligence Hub
+# 🧪 AI Ops Lab — Flight Design
 
 > AI-powered business intelligence for freelance design studios.
 > Built at the PNP Foundation SMB Innovation Sprint Hackathon · April 2026.

@@ -1,4 +1,4 @@
-# 🐶 AVI RAMP-UP FILE — Flight Design AI Hub
+# 🐶 AVI RAMP-UP FILE — AI Ops Lab (Flight Design)
 > Read this first in any new session. Everything important is here.
 
 ---
@@ -33,7 +33,7 @@ She is the human glue manually reconciling all of them every day.
 
 ---
 
-## WHAT WE BUILT: Flight Design Business Intelligence Hub
+## WHAT WE BUILT: AI Ops Lab for Flight Design
 
 **One-line pitch:**
 > "Ariana opens one dashboard instead of 5 apps — and an AI tells her exactly what needs her attention today."

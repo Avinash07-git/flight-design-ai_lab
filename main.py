@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 import database as db
 import ai
 
-app = FastAPI(title="Flight Design — Business Intelligence Hub")
+app = FastAPI(title="AI Ops Lab")
 templates = Jinja2Templates(directory="templates")
 
 if os.path.exists("static"):
