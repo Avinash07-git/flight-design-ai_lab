@@ -229,11 +229,13 @@ async def capacity_data(
     capacity_data = db.get_capacity_data(start, end)
     cap_trend     = db.get_weekly_capacity_pct(start, end)
     insight       = ai.capacity_insight(capacity_data)
+    bench_staff   = [e for e in db.get_staff_week_availability() if e.get("is_bench")]
     return templates.TemplateResponse("partials/capacity_data.html", {
         "request":       request,
         "capacity_data": capacity_data,
         "cap_trend":     cap_trend,
         "insight":       insight,
+        "bench_staff":   bench_staff,
         # date-range context
         "date_start":    start,
         "date_end":      end,

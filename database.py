@@ -725,6 +725,7 @@ def get_staff_week_availability() -> list[dict]:
         scheduled_h     = round(week_hrs.get(emp["name"], 0), 1)
         free_h          = round(contracted_h - scheduled_h, 1)
         utilization_pct = round(scheduled_h / contracted_h * 100) if contracted_h else 0
+        is_bench        = emp["employee_type"] == "Available Bandwidth"
         result.append({
             "name":            emp["name"],
             "employee_type":   emp["employee_type"],
@@ -735,11 +736,16 @@ def get_staff_week_availability() -> list[dict]:
             "utilization_pct": utilization_pct,
             "overloaded":      free_h < 0,
             "has_capacity":    free_h > 1,     # >1h truly free
+            "is_bench":        is_bench,        # Available Bandwidth type — always prefer first
             "current_projects": week_projects.get(emp["name"], []),
             "week_start":       week_mon,
             "week_end":         week_sun,
         })
 
-    # Most-available first; tiebreak by fewest active projects (less context-switching)
-    result.sort(key=lambda x: (-x["free_h"], len(x["current_projects"])))
+    # Sort order: bench first (always free to assign), then most-free, then fewest projects
+    result.sort(key=lambda x: (
+        0 if x["is_bench"] else 1,          # bench always floats to top
+        -x["free_h"],                        # then most free hours
+        len(x["current_projects"]),           # then fewest active projects
+    ))
     return result

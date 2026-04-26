@@ -207,13 +207,17 @@ def project_risk_analysis(
     staff_availability: list[dict],
 ) -> str:
     """Identify at-risk projects and recommend specific staff rebalancing."""
-    at_risk = [p for p in project_health if p["risk"] in ("OVER", "AT_RISK")]
-    available = [e for e in staff_availability if e["has_capacity"] and not e["overloaded"]]
+    # Separate bench staff from regular available staff
+    bench      = [e for e in staff_availability if e.get("is_bench")]
+    at_risk    = [p for p in project_health if p["risk"] in ("OVER", "AT_RISK")]
+    available  = [e for e in staff_availability if not e.get("is_bench") and e["has_capacity"] and not e["overloaded"]]
     overloaded = [e for e in staff_availability if e["overloaded"]]
 
     week_ref = staff_availability[0]["week_start"] if staff_availability else "this week"
 
     # Deterministic fallback — no AI needed
+    best_pick = (bench[0] if bench else available[0]) if (bench or available) else None
+
     if not at_risk:
         over_proj = [p for p in project_health if p["risk"] == "OVER"]
         if over_proj:
@@ -221,36 +225,33 @@ def project_risk_analysis(
             fallback = (
                 f"{p['name']} has exceeded its hours budget by {abs(p['remaining_h']):.1f}h "
                 f"({p['budget_pct']:.0f}% burned). "
-                "Do NOT log more hours against it until the client approves a budget amendment. "
-                "Use the Budget Overrun Emails action to draft that conversation."
+                "Do NOT log more hours — pause logging and use Budget Overrun Emails to draft the client conversation."
             )
         else:
-            fallback = (
-                "No projects are currently at risk. All budgeted projects are under 80% burned. "
-                + (f"{available[0]['name']} has {available[0]['free_h']:.1f}h of unscheduled capacity "
-                   f"this week that could be used proactively."
-                   if available else "")
-            )
+            bench_note = (f" {bench[0]['name']} and {bench[1]['name']} are fully available on the bench."
+                         if len(bench) >= 2 else
+                         f" {bench[0]['name']} is on the bench and fully available."
+                         if bench else "")
+            fallback = "No projects are currently at risk — all budgeted projects are under 80% burned." + bench_note
     else:
         p = at_risk[0]
-        a = available[0] if available else None
         if p["risk"] == "OVER":
-            # Budget blown — do NOT assign more hours
             fallback = (
                 f"{p['name']} is OVER budget at {p['budget_pct']:.0f}% burn "
                 f"({abs(p['remaining_h']):.1f}h over). "
-                "Pause time logging on this project immediately — adding more hours makes it worse. "
-                "Draft a budget amendment email to the client first. "
-                + (f"Priscilla Vega and Katrina McHugh are already overloaded — pull work from them, don't add to them."
-                   if overloaded else "")
+                "Pause time logging immediately — adding more hours makes it worse. "
+                "Draft a budget amendment email to the client first."
             )
         else:
-            # AT_RISK but not yet over — assigning is appropriate
+            pick_note = (
+                f"Recommend assigning {best_pick['name']} — "
+                + ("they are on the bench with 40h fully available and zero current projects."
+                   if best_pick.get("is_bench") else
+                   f"{best_pick['free_h']:.1f}h free this week, {len(best_pick.get('current_projects',[]))} active projects.")
+            ) if best_pick else "No staff currently available to reassign."
             fallback = (
                 f"{p['name']} is AT_RISK at {p['budget_pct']:.0f}% burn "
-                f"({p['remaining_h']:.1f}h remaining). "
-                + (f"Recommend assigning {a['name']} ({a['free_h']:.1f}h free this week) to close it within budget."
-                   if a else "No staff have free capacity to reassign right now.")
+                f"({p['remaining_h']:.1f}h remaining budget). {pick_note}"
             )
 
     # Pre-compute JSON blocks outside the f-string to avoid {{ }} escaping issues
@@ -261,6 +262,12 @@ def project_risk_analysis(
           "assigned_staff": p["assigned_staff"]} for p in at_risk],
         indent=2,
     ) if at_risk else "[None \u2014 all projects within budget]"
+
+    bench_json = json.dumps(
+        [{"name": e["name"], "bill_rate": e["bill_rate"],
+          "free_h": e["free_h"], "projects_count": 0}   for e in bench],
+        indent=2,
+    ) if bench else "[None]"
 
     available_json = json.dumps(
         [{"name": e["name"], "type": e["employee_type"], "free_h": e["free_h"],
@@ -289,22 +296,26 @@ For OVER projects (burn_pct > 100, budget already blown):
     a professional budget-amendment email to the client.
 
 For AT_RISK projects (burn_pct 80–99, still has remaining hours):
-  • Suggest assigning someone — but ALWAYS pick the person with the highest free_h first
-    (the staff list is already sorted: most-available at the top).
-  • If two people have similar free_h, prefer the one with FEWER current projects —
-    fewer projects = less context-switching = better quality output.
-  • Never recommend someone with 5+ current projects if a less-loaded option exists.
-  • State exactly: name, how many free hours they have, and how many projects they’re currently on.
+  • ALWAYS check bench staff FIRST — they are Available Bandwidth with zero current projects
+    and 40h/week capacity. They are the ideal pick: no context-switching, no burnout risk.
+  • If bench staff exist, recommend them by name and mention they are fully available.
+  • Only fall back to regular staff if no bench staff exist. Among regular staff, pick the
+    person with the highest free_h and fewest current projects.
+  • Never recommend someone on 5+ projects if a lighter option exists.
+  • State: name, is_bench or not, free hours available, current project count.
 
 For overloaded staff (free_h < 0):
-  • Name them and say Ariana should pull work FROM them this week, not add to them.
+  • Name them and say Ariana should pull work FROM them this week.
 
 WEEK: {week_ref}
 
 AT-RISK / OVER-BUDGET PROJECTS:
 {at_risk_json}
 
-STAFF (sorted by free_h descending — most available first):
+AVAILABLE BANDWIDTH STAFF (bench — zero projects, fully free — ALWAYS PREFER THESE FIRST):
+{bench_json}
+
+REGULAR STAFF WITH SOME CAPACITY (sorted: most free hours first, then fewest projects):
 {available_json}
 
 OVERLOADED STAFF (free_h < 0 — pull work from these people):
