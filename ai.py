@@ -221,9 +221,8 @@ def project_risk_analysis(
             fallback = (
                 f"{p['name']} has exceeded its hours budget by {abs(p['remaining_h']):.1f}h "
                 f"({p['budget_pct']:.0f}% burned). "
-                + (f"{available[0]['name']} has {available[0]['free_h']:.1f}h free this week "
-                   f"and could be reassigned to help close it out."
-                   if available else "No staff have free capacity this week.")
+                "Do NOT log more hours against it until the client approves a budget amendment. "
+                "Use the Budget Overrun Emails action to draft that conversation."
             )
         else:
             fallback = (
@@ -235,40 +234,82 @@ def project_risk_analysis(
     else:
         p = at_risk[0]
         a = available[0] if available else None
-        fallback = (
-            f"{p['name']} is {p['risk']} at {p['budget_pct']:.0f}% budget burn "
-            f"({p['remaining_h']:+.1f}h remaining). "
-            + (f"Recommend assigning {a['name']} ({a['free_h']:.1f}h free this week) to this project."
-               if a else "No staff have free capacity to reassign right now.")
-        )
+        if p["risk"] == "OVER":
+            # Budget blown — do NOT assign more hours
+            fallback = (
+                f"{p['name']} is OVER budget at {p['budget_pct']:.0f}% burn "
+                f"({abs(p['remaining_h']):.1f}h over). "
+                "Pause time logging on this project immediately — adding more hours makes it worse. "
+                "Draft a budget amendment email to the client first. "
+                + (f"Priscilla Vega and Katrina McHugh are already overloaded — pull work from them, don't add to them."
+                   if overloaded else "")
+            )
+        else:
+            # AT_RISK but not yet over — assigning is appropriate
+            fallback = (
+                f"{p['name']} is AT_RISK at {p['budget_pct']:.0f}% burn "
+                f"({p['remaining_h']:.1f}h remaining). "
+                + (f"Recommend assigning {a['name']} ({a['free_h']:.1f}h free this week) to close it within budget."
+                   if a else "No staff have free capacity to reassign right now.")
+            )
+
+    # Pre-compute JSON blocks outside the f-string to avoid {{ }} escaping issues
+    at_risk_json = json.dumps(
+        [{"project": p["name"], "client": p["client"], "service": p["service"],
+          "risk": p["risk"], "burn_pct": p["budget_pct"],
+          "remaining_h": p["remaining_h"], "this_week_h": p["this_week_h"],
+          "assigned_staff": p["assigned_staff"]} for p in at_risk],
+        indent=2,
+    ) if at_risk else "[None \u2014 all projects within budget]"
+
+    available_json = json.dumps(
+        [{"name": e["name"], "type": e["employee_type"], "free_h": e["free_h"],
+          "projects_count": len(e["current_projects"]),
+          "current_projects": e["current_projects"]} for e in available],
+        indent=2,
+    ) if available else "[None \u2014 everyone is fully scheduled]"
+
+    overloaded_json = json.dumps(
+        [{"name": e["name"], "over_by_h": abs(e["free_h"]),
+          "projects_count": len(e["current_projects"]),
+          "current_projects": e["current_projects"]} for e in overloaded],
+        indent=2,
+    ) if overloaded else "[None]"
 
     prompt = f"""
 You are a sharp business advisor for Flight Design (Ariana Wolf, Oakland CA).
-Analyse the project risk and staff availability data, then give a concrete, actionable rebalancing recommendation.
+Analyse the project risk and staff availability data, then give a concrete, actionable recommendation.
+
+⚠️  CRITICAL RULE — read this carefully before responding:
+- If a project risk is "OVER" (burn_pct > 100), that means the hours budget is ALREADY BLOWN.
+  DO NOT recommend assigning more staff hours to it. Adding more hours makes the financial hole DEEPER.
+  The correct action for OVER projects is:
+    1. Pause logging time against it immediately.
+    2. Flag it for a client budget-amendment conversation (the budget_overrun_email action handles this).
+    3. If any staff are currently assigned, consider pulling them OFF until the client approves more budget.
+- Only recommend ASSIGNING more staff when risk is "AT_RISK" (80\u201399% burned) and there is still
+  remaining budget to spend. In that case, name who can help and how many hours they can contribute
+  within the remaining budget.
+- Always flag overloaded staff (free_h < 0) — Ariana should pull work FROM them, not give them more.
+- Note how many projects each person is already on. Someone on 5+ projects may be over-extended
+  in terms of context-switching even if they have a few free hours numerically.
 
 WEEK: {week_ref}
 
 AT-RISK / OVER-BUDGET PROJECTS:
-{json.dumps([{"project": p["name"], "client": p["client"], "service": p["service"],
-              "risk": p["risk"], "burn_pct": p["budget_pct"],
-              "remaining_h": p["remaining_h"], "this_week_h": p["this_week_h"],
-              "assigned_staff": p["assigned_staff"]} for p in at_risk], indent=2)
-if at_risk else "[None — all projects within budget]"}
+{at_risk_json}
 
 STAFF WITH FREE CAPACITY THIS WEEK:
-{json.dumps([{"name": e["name"], "type": e["employee_type"], "free_h": e["free_h"],
-              "current_projects": e["current_projects"]} for e in available], indent=2)
-if available else "[None — everyone is fully scheduled]"}
+{available_json}
 
-OVERLOADED STAFF (already over contracted hours):
-{json.dumps([{"name": e["name"], "over_by_h": abs(e["free_h"]),
-              "current_projects": e["current_projects"]} for e in overloaded], indent=2)
-if overloaded else "[None]"}
+OVERLOADED STAFF (already over contracted hours — do NOT add work):
+{overloaded_json}
 
 Write 3–4 sentences:
-1. Name the project(s) at risk and why (burn rate + remaining hours).
-2. Name specifically which staff member(s) should be reassigned, how many hours they can take on, and to which project.
-3. Flag anyone overloaded that Ariana should pull work FROM.
+1. Name any OVER-budget projects and be explicit: the budget is blown, do NOT add more hours, flag for client conversation.
+2. Name any AT_RISK projects and who (if anyone) should be assigned to complete them within the remaining budget.
+3. Name overloaded staff and recommend pulling work FROM them.
+4. If someone has many projects already (5+), flag the context-switching risk even if they have free hours.
 Be direct. Use real names and numbers. No bullet points.
 """
     return ask(prompt, fallback=fallback)
