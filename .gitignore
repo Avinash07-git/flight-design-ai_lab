@@ -4,3 +4,12 @@ __pycache__/
 *.db
 .env
 server.log
+
+# Mac junk
+.DS_Store
+
+# Personal context / ramp-up files (not for public repo)
+AVI_RAMPUP.md
+
+# Old abandoned data model — not used by current app
+mock_data/
